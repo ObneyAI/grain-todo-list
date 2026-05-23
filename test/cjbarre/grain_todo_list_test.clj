@@ -18,6 +18,8 @@
 (def review-id #uuid "00000000-0000-0000-0000-000000000301")
 (def now (OffsetDateTime/parse "2026-05-22T12:00:00Z"))
 (def later (OffsetDateTime/parse "2026-05-23T12:00:00Z"))
+(def later-string "2026-05-24T00:00:00Z")
+(def later-from-string (OffsetDateTime/parse later-string))
 
 (defn test-context
   []
@@ -178,29 +180,46 @@
         (process! ctx :todo/clear-task-due-at {:task-id task-id})
         (process! ctx :todo/clear-task-defer-date {:task-id task-id})
         (is (not (contains? (get (project-tasks ctx) task-id) :due-at)))
-        (is (not (contains? (get (project-tasks ctx) task-id) :defer-until)))))))
+        (is (not (contains? (get (project-tasks ctx) task-id) :defer-until))))
+      (testing "date commands accept parseable strings and emit OffsetDateTime values"
+        (process! ctx :todo/set-task-due-at {:task-id task-id :due-at later-string})
+        (process! ctx :todo/defer-task {:task-id task-id :defer-until later-string})
+        (let [task (get (project-tasks ctx) task-id)]
+          (is (= later-from-string (:due-at task)))
+          (is (= later-from-string (:defer-until task))))))))
 
 (deftest command-processor-projects-and-assignment
   (with-context
-    (fn [ctx]
-      (testing "project commands go through Grain command processor"
-        (is (event-of-type (process! ctx :todo/create-project {:project-id project-id :name "Ship v1"})
-                           :todo/project-created))
-        (is (= "Ship v1" (get-in (project-projects ctx) [project-id :name]))))
-      (testing "task assignment tags and projects through read models"
-        (process! ctx :todo/capture-task {:task-id task-id :title "Project task"})
-        (let [result (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
-              event (event-of-type result :todo/task-assigned-to-project)]
-          (is event)
-          (is (= #{[:task task-id]} (:event/tags event)))
-          (is (= project-id (get-in (project-tasks ctx) [task-id :project-id])))))
-      (testing "inactive projects reject assignment"
-        (process! ctx :todo/cancel-project {:project-id project-id})
-        (process! ctx :todo/capture-task {:task-id task-2-id :title "Blocked assignment"})
-        (is (= ::anom/conflict
-               (::anom/category
-                (process! ctx :todo/assign-task-to-project
-                          {:task-id task-2-id :project-id project-id}))))))))
+   (fn [ctx]
+     (testing "project commands go through Grain command processor"
+       (is (event-of-type (process! ctx :todo/create-project {:project-id project-id :name "Ship v1"})
+                          :todo/project-created))
+       (is (= "Ship v1" (get-in (project-projects ctx) [project-id :name])))
+       (is (event-of-type (process! ctx :todo/rename-project {:project-id project-id :name "Ship v2"})
+                          :todo/project-renamed))
+       (is (= "Ship v2" (get-in (project-projects ctx) [project-id :name]))))
+     (testing "task assignment tags and projects through read models"
+       (process! ctx :todo/capture-task {:task-id task-id :title "Project task"})
+       (let [result (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
+             event (event-of-type result :todo/task-assigned-to-project)]
+         (is event)
+         (is (= #{[:task task-id]} (:event/tags event)))
+         (is (= project-id (get-in (project-tasks ctx) [task-id :project-id]))))
+       (is (event-of-type (process! ctx :todo/remove-task-from-project {:task-id task-id})
+                          :todo/task-removed-from-project))
+       (is (not (contains? (get (project-tasks ctx) task-id) :project-id))))
+     (testing "inactive projects reject assignment"
+       (process! ctx :todo/cancel-project {:project-id project-id})
+       (process! ctx :todo/capture-task {:task-id task-2-id :title "Blocked assignment"})
+       (is (= ::anom/conflict
+              (::anom/category
+               (process! ctx :todo/assign-task-to-project
+                         {:task-id task-2-id :project-id project-id})))))
+       (is (= :canceled (get-in (project-projects ctx) [project-id :status])))
+     (testing "inactive projects can be reactivated"
+       (is (event-of-type (process! ctx :todo/reactivate-project {:project-id project-id})
+                          :todo/project-reactivated))
+       (is (= :active (get-in (project-projects ctx) [project-id :status])))))))
 
 (deftest grain-projection-helper-tests
   (with-context
@@ -225,24 +244,75 @@
       (testing "path/query params are validated and decoded through query processor"
         (let [result (run-query ctx :todo/tasks-page {:bucket :inbox})]
           (is (= :inbox (:bucket (:query/result result))))
-          (is (= [task-id] (map :task-id (:tasks (:query/result result))))))))))
+          (is (= [task-id] (map :task-id (:tasks (:query/result result)))))))
+      (testing "project page query includes task counts from projections"
+        (process! ctx :todo/create-project {:project-id project-id :name "Counted project"})
+        (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
+        (let [result (run-query ctx :todo/project-page {:project-id project-id})]
+          (is (= 1 (get-in result [:query/result :project :task-counts :active])))
+          (is (= [task-id] (map :task-id (get-in result [:query/result :tasks]))))))
+      (testing "review page query surfaces review material from real projections"
+        (let [future-date (.plusDays (OffsetDateTime/now) 1)]
+          (process! ctx :todo/capture-task {:task-id task-2-id
+                                            :title "Timed review item"
+                                            :bucket :waiting
+                                            :due-at future-date
+                                            :defer-until future-date}))
+        (let [result (run-query ctx :todo/review-page {})
+              query-result (:query/result result)]
+          (is (= "Timed review item" (get-in query-result [:due-soon 0 :title])))
+          (is (= "Timed review item" (get-in query-result [:deferred 0 :title])))
+          (is (= "Counted project" (get-in query-result [:review-projects 0 :name])))
+          (is (empty? (:projects-without-next-action query-result))))))))
 
 (deftest weekly-review-command-and-projection-tests
   (with-context
     (fn [ctx]
       (testing "review cannot complete before all buckets are reviewed"
+        (process! ctx :todo/create-project {:project-id project-id :name "Review project"})
         (process! ctx :todo/start-weekly-review {:review-id review-id})
         (is (= :active (:status (project-review ctx))))
         (is (= ::anom/conflict
                (::anom/category (process! ctx :todo/complete-weekly-review {:review-id review-id})))))
+      (testing "project review commands validate active projects through the processor"
+        (is (= ::anom/not-found
+               (::anom/category (process! ctx :todo/mark-project-reviewed
+                                          {:review-id review-id :project-id task-id}))))
+        (process! ctx :todo/cancel-project {:project-id project-id})
+        (is (= ::anom/conflict
+               (::anom/category (process! ctx :todo/mark-project-reviewed
+                                          {:review-id review-id :project-id project-id}))))
+        (process! ctx :todo/reactivate-project {:project-id project-id}))
       (testing "review completes after all buckets and active projects are reviewed"
         (doseq [bucket app/buckets]
           (process! ctx :todo/mark-bucket-reviewed {:review-id review-id :bucket bucket}))
+        (process! ctx :todo/mark-project-reviewed {:review-id review-id :project-id project-id})
         (let [result (process! ctx :todo/complete-weekly-review {:review-id review-id})]
           (is (event-of-type result :todo/weekly-review-completed))
           (is (= :completed (:status (project-review ctx)))))))))
 
 (deftest pure-ui-rendering-tests
+  (testing "UI substrate primitives render reusable section, empty, and summary surfaces"
+    (let [hiccup [:div
+                  (ui/page-section {:title "Substrate" :count 2}
+                                   (ui/empty-state "Nothing to show."))
+                  (ui/task-summary-row {:task-id task-id
+                                        :title "Summary task"
+                                        :bucket :next
+                                        :status :active
+                                        :order 1000
+                                        :due-at later}
+                                       [{:project-id project-id :name "Project"}])
+                  (ui/project-summary-row {:project-id project-id
+                                           :name "Summary project"
+                                           :status :active
+                                           :task-counts {:active 1 :completed 0}})]
+          leaves (tree-seq coll? seq hiccup)]
+      (is (some #(= "Substrate" %) leaves))
+      (is (some #(= "Nothing to show." %) leaves))
+      (is (some #(= "Summary task" %) leaves))
+      (is (some #(= "Summary project" %) leaves))))
+
   (testing "pure Hiccup rendering can be tested without Grain processors"
     (let [hiccup (ui/home-page {:buckets {:inbox [{:task-id task-id
                                                    :title "UI task"
@@ -257,4 +327,34 @@
                                 :projects []
                                 :review {}})]
       (is (= :div#app (first hiccup)))
-      (is (some #(= "UI task" %) (tree-seq coll? seq hiccup))))))
+      (is (some #(= "UI task" %) (tree-seq coll? seq hiccup)))))
+
+  (testing "review page exposes projection-derived progress without running processors"
+    (let [hiccup (ui/review-page {:buckets {:inbox []
+                                            :next [{:task-id task-id}]
+                                            :waiting []
+                                            :someday []}
+                                  :deferred []
+                                  :due-soon [{:task-id task-id
+                                              :title "Review due"
+                                              :bucket :next
+                                              :status :active
+                                              :due-at later}]
+                                  :inactive []
+                                  :projects [{:project-id project-id :name "UI project"}]
+                                  :review-projects [{:project-id project-id
+                                                     :name "UI project"
+                                                     :status :active
+                                                     :task-counts {:active 0 :completed 0}}]
+                                  :projects-without-next-action [{:project-id project-id
+                                                                  :name "UI project"
+                                                                  :status :active
+                                                                  :task-counts {:active 0 :completed 0}}]
+                                  :review {:review-id review-id
+                                           :status :active
+                                           :reviewed-buckets #{:inbox :next}
+                                           :reviewed-project-ids #{project-id}}})]
+      (is (some #(= "2/4 buckets reviewed" %) (tree-seq coll? seq hiccup)))
+      (is (some #(= "1/1 projects reviewed" %) (tree-seq coll? seq hiccup)))
+      (is (some #(= "Review due" %) (tree-seq coll? seq hiccup)))
+      (is (some #(= "Projects Without Next Actions" %) (tree-seq coll? seq hiccup))))))

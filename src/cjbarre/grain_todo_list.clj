@@ -136,6 +136,7 @@
               {:datastar/shim-opts {:head datastar-head
                                      :html-attrs {:data-theme "workshop"}}})
    #{["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]
+     ["/favicon.ico" :get [(fn [_] {:status 204 :body ""})] :route-name ::favicon]
      ["/actions" :post [(ds/action-handler context {})] :route-name ::datastar-actions]}))
 
 (defmethod ig/init-key ::webserver [_ config]
@@ -493,12 +494,38 @@
        (filter #(= :active (:status %)))
        (sort-by (juxt :name :project-id))))
 
+(defn project-task-counts
+  [ctx project-id]
+  (->> (vals (all-tasks ctx))
+       (filter #(= project-id (:project-id %)))
+       (group-by :status)
+       (reduce-kv (fn [m status tasks]
+                    (assoc m status (count tasks)))
+                  {:active 0 :completed 0 :canceled 0 :archived 0})))
+
+(defn project-summaries
+  [ctx]
+  (->> (vals (all-projects ctx))
+       (sort-by (juxt :status :name :project-id))
+       (map (fn [project]
+              (assoc project :task-counts (project-task-counts ctx (:project-id project)))))))
+
+(defn active-project-summaries
+  [ctx]
+  (->> (project-summaries ctx)
+       (filter #(= :active (:status %)))))
+
 (defn tasks-for-project
   [ctx project-id]
   (->> (vals (all-tasks ctx))
        (filter active-task?)
        (filter #(= project-id (:project-id %)))
        ordered-tasks))
+
+(defn projects-without-next-action
+  [ctx]
+  (->> (active-project-summaries ctx)
+       (filter #(zero? (get-in % [:task-counts :active] 0)))))
 
 ;; -------- ;;
 ;; Commands ;;
@@ -795,6 +822,7 @@
       (contains? project ::anom/category) project
       (not= review-id (:review-id review)) (conflict "Review is not active.")
       (not= :active (:status review)) (conflict "Review is not active.")
+      (not= :active (:status project)) (conflict "Only active projects can be reviewed.")
       :else
       {:command-result/events
        [(->event {:type :todo/project-reviewed
@@ -841,6 +869,9 @@
    :due-soon (vec (due-soon-tasks ctx))
    :inactive (vec (inactive-tasks ctx))
    :projects (vec (active-projects ctx))
+   :project-summaries (vec (project-summaries ctx))
+   :review-projects (vec (active-project-summaries ctx))
+   :projects-without-next-action (vec (projects-without-next-action ctx))
    :review (current-weekly-review ctx)})
 
 (defquery :todo home-page
@@ -871,22 +902,28 @@
   {:authorized? (constantly true)
    :datastar/path "/projects"
    :datastar/title "Projects"
-   :grain/read-models {:todo/projects 1}}
+   :grain/read-models {:todo/tasks 1 :todo/projects 1}}
   [ctx]
-  (let [projects (vec (active-projects ctx))]
+  (let [projects (vec (project-summaries ctx))]
     {:query/result {:projects projects}
      :datastar/hiccup (ui/projects-page {:projects projects})}))
 
 (defquery :todo project-page
   {:authorized? (constantly true)
-   :datastar/path "/projects/:project-id"
+   :datastar/path "/project"
    :datastar/title "Project"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
   [{{:keys [project-id]} :query :as ctx}]
   (let [project (get (all-projects ctx) project-id)
         tasks (vec (tasks-for-project ctx project-id))]
-    {:query/result {:project project :tasks tasks :projects (vec (active-projects ctx))}
-     :datastar/hiccup (ui/project-page {:project project :tasks tasks :projects (vec (active-projects ctx))})}))
+    {:query/result {:project (when project
+                               (assoc project :task-counts (project-task-counts ctx project-id)))
+                    :tasks tasks
+                    :projects (vec (active-projects ctx))}
+     :datastar/hiccup (ui/project-page {:project (when project
+                                                   (assoc project :task-counts (project-task-counts ctx project-id)))
+                                        :tasks tasks
+                                        :projects (vec (active-projects ctx))})}))
 
 (defquery :todo review-page
   {:authorized? (constantly true)

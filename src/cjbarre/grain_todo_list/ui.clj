@@ -66,6 +66,34 @@
   [:div {:data-show "$error" :class "alert alert-error mb-4"}
    [:span {:data-text "$error"}]])
 
+(defn empty-state
+  [message]
+  [:div {:class "rounded-box border border-dashed border-base-300 p-6 text-center text-sm text-base-content/60"}
+   message])
+
+(defn badge-row
+  [badges]
+  [:div {:class "flex flex-wrap gap-2 text-xs text-base-content/60"}
+   (for [{:keys [key label class]} badges
+         :when label]
+     [:span {:key (or key label)
+             :class (str "badge badge-sm " (or class "badge-outline"))}
+      label])])
+
+(defn page-section
+  [{:keys [title count status action class]} & body]
+  [:section {:class (str "space-y-3" (when class (str " " class)))}
+   [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"}
+    [:div {:class "min-w-0"}
+     [:h2 {:class "text-lg font-semibold"} title]
+     (when status
+       [:p {:class "mt-1 text-sm text-base-content/60"} status])]
+    [:div {:class "flex flex-wrap items-center gap-2"}
+     (when (some? count)
+       [:span {:class "badge badge-outline"} count])
+     action]]
+   body])
+
 (defn quick-add [{:keys [bucket project-id]}]
   [:form {:class "flex flex-col gap-3 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm sm:flex-row"
           :data-signals (str "{'title': '', 'bucket': '" (name (or bucket :inbox)) "'"
@@ -201,27 +229,44 @@
        (when defer-until
          [:button {:class "btn btn-xs btn-ghost"
                    :data-on:click (command-click "todo/clear-task-defer-date" {:task-id task-id})}
-          "Clear defer"])]]]))
+         "Clear defer"])]]]))
+
+(defn task-project-name
+  [{:keys [project-id]} projects]
+  (some #(when (= project-id (:project-id %)) (:name %)) projects))
+
+(defn task-badges
+  [{:keys [bucket due-at defer-until project-id status] :as task} projects]
+  [{:key :bucket :label (when bucket (get bucket-labels bucket (name bucket))) :class "badge-outline"}
+   {:key :status :label (when status (name status))}
+   {:key :due-at :label (when due-at (str "Due " (date-value due-at))) :class "badge-warning"}
+   {:key :defer-until :label (when defer-until (str "Deferred " (date-value defer-until)))}
+   {:key :project :label (when project-id (or (task-project-name task projects) "Project")) :class "badge-secondary"}])
+
+(defn task-summary-row
+  ([task] (task-summary-row task []))
+  ([{:keys [task-id title due-at] :as task} projects]
+   [:div {:key task-id
+          :class "flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between"}
+    [:div {:class "min-w-0"}
+     [:h3 {:class "truncate text-sm font-medium"} title]
+     (badge-row (task-badges task projects))]
+    (when due-at
+      [:span {:class "badge badge-warning"} (date-value due-at)])]))
 
 (defn task-card
   ([task] (task-card task []))
-  ([{:keys [title bucket due-at defer-until project-id status] :as task} projects]
-   (let [project-name (some #(when (= project-id (:project-id %)) (:name %)) projects)]
-     [:article {:class "rounded-box border border-base-300 bg-base-100 p-3 shadow-sm"}
-   [:div {:class "flex flex-col gap-3"}
-    [:div {:class "flex items-start justify-between gap-3"}
-     [:div {:class "min-w-0"}
-      [:h3 {:class "font-medium"} title]
-      [:div {:class "mt-1 flex flex-wrap gap-2 text-xs text-base-content/60"}
-       [:span {:class "badge badge-sm badge-outline"} (get bucket-labels bucket (name bucket))]
-       [:span {:class "badge badge-sm"} (name status)]
-       (when due-at [:span {:class "badge badge-sm badge-warning"} (str "Due " (date-value due-at))])
-       (when defer-until [:span {:class "badge badge-sm"} (str "Deferred " (date-value defer-until))])
-       (when project-id [:span {:class "badge badge-sm badge-secondary"} (or project-name "Project")])]]
-     (task-actions task)]
-    (when (= :active (:status task))
-      (bucket-move-controls task))
-    (task-editor task projects)]])))
+  ([{:keys [title] :as task} projects]
+   [:article {:class "rounded-box border border-base-300 bg-base-100 p-3 shadow-sm"}
+    [:div {:class "flex flex-col gap-3"}
+     [:div {:class "flex items-start justify-between gap-3"}
+      [:div {:class "min-w-0"}
+       [:h3 {:class "font-medium"} title]
+       (badge-row (task-badges task projects))]
+      (task-actions task)]
+     (when (= :active (:status task))
+       (bucket-move-controls task))
+     (task-editor task projects)]]))
 
 (defn task-list
   ([tasks empty-message] (task-list tasks empty-message []))
@@ -230,35 +275,101 @@
     [:div {:class "space-y-3"}
      (for [task tasks]
        (with-meta (task-card task projects) {:key (:task-id task)}))]
-    [:div {:class "rounded-box border border-dashed border-base-300 p-6 text-center text-sm text-base-content/60"}
-     empty-message])))
+    (empty-state empty-message))))
 
 (defn bucket-section [bucket tasks projects]
-  [:section {:class "space-y-3"}
-   [:div {:class "flex items-center justify-between"}
-    [:h2 {:class "text-lg font-semibold"} (get bucket-labels bucket)]
-    [:span {:class "badge badge-outline"} (count tasks)]]
-   (task-list tasks "Nothing here." projects)])
+  (page-section {:title (get bucket-labels bucket)
+                 :count (count tasks)}
+                (task-list tasks "Nothing here." projects)))
 
-(defn project-card [{:keys [project-id name status]}]
+(defn due-soon-list [tasks projects]
+  (if (seq tasks)
+    [:div {:class "divide-y divide-base-300 rounded-box border border-base-300 bg-base-100 shadow-sm"}
+     (for [task tasks]
+       (task-summary-row task projects))]
+    (empty-state "No due dates yet.")))
+
+(defn task-summary-list [tasks empty-message projects]
+  (if (seq tasks)
+    [:div {:class "divide-y divide-base-300 rounded-box border border-base-300 bg-base-100 shadow-sm"}
+     (for [task tasks]
+       (task-summary-row task projects))]
+    (empty-state empty-message)))
+
+(defn project-actions [{:keys [project-id status]}]
+  [:div {:class "flex flex-wrap gap-2"}
+   [:a {:class "btn btn-xs btn-outline" :href (str "/project?project-id=" project-id)} "Open"]
+   (when (= :active status)
+     [:button {:class "btn btn-xs btn-success"
+               :data-on:click (command-click "todo/complete-project" {:project-id project-id})}
+      "Complete"])
+   (when (= :active status)
+     [:button {:class "btn btn-xs btn-ghost text-error"
+               :data-on:click (command-click "todo/cancel-project" {:project-id project-id})}
+      "Cancel"])
+   (when (#{:completed :canceled} status)
+     [:button {:class "btn btn-xs btn-outline"
+               :data-on:click (command-click "todo/reactivate-project" {:project-id project-id})}
+      "Reactivate"])])
+
+(defn project-editor [{:keys [project-id name]}]
+  (let [name-signal (str "project_name_" (signal-suffix project-id))]
+    [:details {:class "rounded border border-base-300 bg-base-200/30 px-3 py-2"
+               :data-signals (signal-map [[name-signal name]])}
+     [:summary {:class "cursor-pointer select-none text-sm font-medium text-base-content/70"} "Edit project"]
+     [:form {:class "mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"
+             :data-on:submit__prevent
+             (str (ds-assign "command/name" (ds-str "todo/rename-project")) "; "
+                  (ds-assign "project-id" (ds-str project-id)) "; "
+                  (ds-assign "name" (signal-ref name-signal)) "; "
+                  "@post('/actions')")}
+      [:input {:class "input input-bordered input-sm min-w-0"
+               :aria-label "Project name"
+               :data-bind name-signal
+               :required true}]
+      [:button {:class "btn btn-sm btn-outline" :type "submit"} "Rename"]]]))
+
+(defn task-count-row [task-counts]
+  (let [{:keys [active completed canceled archived]} (merge {:active 0 :completed 0 :canceled 0 :archived 0}
+                                                            task-counts)]
+    (badge-row [{:key :active :label (str active " active") :class "badge-outline"}
+                {:key :completed :label (str completed " done") :class "badge-outline"}
+                {:key :canceled :label (when (pos? canceled) (str canceled " canceled")) :class "badge-outline"}
+                {:key :archived :label (when (pos? archived) (str archived " archived")) :class "badge-outline"}])))
+
+(defn project-summary-row [{:keys [project-id name status task-counts] :as project}]
+  [:div {:key project-id
+         :class "flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"}
+   [:div {:class "min-w-0"}
+    [:h3 {:class "truncate text-sm font-medium"} name]
+    (badge-row [{:key :status :label (clojure.core/name status)}
+                {:key :active :label (str (get task-counts :active 0) " active") :class "badge-outline"}
+                {:key :completed :label (str (get task-counts :completed 0) " done") :class "badge-outline"}])]
+   (project-actions project)])
+
+(defn project-card [{:keys [name status task-counts] :as project}]
   [:article {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
    [:div {:class "flex flex-col gap-3"}
     [:div {:class "min-w-0"}
      [:h3 {:class "font-medium"} name]
      [:p {:class "text-xs text-base-content/60"} (clojure.core/name status)]]
-    [:div {:class "flex flex-wrap gap-2"}
-     [:a {:class "btn btn-xs btn-outline" :href (str "/projects/" project-id)} "Open"]
-     [:button {:class "btn btn-xs btn-success"
-               :data-on:click (command-click "todo/complete-project" {:project-id project-id})}
-      "Complete"]]]])
+    (task-count-row task-counts)
+    (project-actions project)
+    (project-editor project)]])
 
 (defn projects-list [projects]
   (if (seq projects)
     [:div {:class "grid gap-3 md:grid-cols-2"}
      (for [project projects]
        (with-meta (project-card project) {:key (:project-id project)}))]
-    [:div {:class "rounded-box border border-dashed border-base-300 p-6 text-center text-sm text-base-content/60"}
-     "No active projects."]))
+    (empty-state "No active projects.")))
+
+(defn project-summary-list [projects empty-message]
+  (if (seq projects)
+    [:div {:class "divide-y divide-base-300 rounded-box border border-base-300 bg-base-100 shadow-sm"}
+     (for [project projects]
+       (project-summary-row project))]
+    (empty-state empty-message)))
 
 (defn home-page [{:keys [buckets deferred due-soon inactive projects review]}]
   (shell {:title "GTD Workspace"}
@@ -270,26 +381,21 @@
           [:div {:class "space-y-8"}
            (for [bucket [:inbox :next :waiting :someday]]
              (with-meta (bucket-section bucket (get buckets bucket) projects) {:key bucket}))
-           [:section {:class "space-y-3"}
-            [:h2 {:class "text-lg font-semibold"} "Deferred"]
-            (task-list deferred "No deferred tasks." projects)]
-           [:section {:class "space-y-3"}
-            [:h2 {:class "text-lg font-semibold"} "Due Soon"]
-            (task-list due-soon "No due dates yet." projects)]
-           [:section {:class "space-y-3"}
-            [:h2 {:class "text-lg font-semibold"} "Done / Canceled"]
-            (task-list inactive "No completed or canceled tasks." projects)]]
+           (page-section {:title "Deferred" :count (count deferred)}
+                         (task-list deferred "No deferred tasks." projects))
+           (page-section {:title "Due Soon" :count (count due-soon)}
+                         (due-soon-list due-soon projects))
+           (page-section {:title "Done / Canceled" :count (count inactive)}
+                         (task-list inactive "No completed or canceled tasks." projects))]
           [:aside {:class "space-y-6"}
-           [:section {:class "space-y-3"}
-            [:h2 {:class "text-lg font-semibold"} "Projects"]
-            (projects-list projects)]
-           [:section {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
-            [:h2 {:class "text-lg font-semibold"} "Weekly Review"]
-            [:p {:class "mt-2 text-sm text-base-content/70"}
-             (if (= :active (:status review))
-               "A weekly review is active."
-               "No active weekly review.")]
-            [:a {:class "btn btn-outline btn-sm mt-4" :href "/review"} "Open review"]]]]))
+           (page-section {:title "Projects" :count (count projects)}
+                         (projects-list projects))
+           (page-section {:title "Weekly Review"
+                          :status (if (= :active (:status review))
+                                    "A weekly review is active."
+                                    "No active weekly review.")
+                          :class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"
+                          :action [:a {:class "btn btn-outline btn-sm" :href "/review"} "Open review"]})]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
   (shell {:title (str (get bucket-labels bucket "Tasks") " Tasks")}
@@ -308,38 +414,93 @@
          (action-error)
          (if project
            [:div {:class "space-y-6"}
-            (quick-add {:bucket :next :project-id (:project-id project)})
+            [:section {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
+             [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
+              [:div {:class "space-y-2"}
+               [:p {:class "text-sm text-base-content/70"} (str "Status: " (clojure.core/name (:status project)))]
+               (task-count-row (:task-counts project))]
+              (project-actions project)]
+             [:div {:class "mt-4"}
+              (project-editor project)]]
+            (when (= :active (:status project))
+              (quick-add {:bucket :next :project-id (:project-id project)}))
             (task-list tasks "No active tasks for this project." projects)]
            [:div {:class "alert alert-warning"} "Project not found."])))
 
-(defn review-page [{:keys [buckets projects review]}]
+(defn review-bucket-action [review bucket reviewed?]
+  [:button {:class (str "btn btn-sm " (if reviewed? "btn-success" "btn-outline"))
+            :disabled reviewed?
+            :data-on:click (command-click "todo/mark-bucket-reviewed"
+                                          {:review-id (:review-id review)
+                                           :bucket (name bucket)})}
+   (if reviewed? "Reviewed" "Mark reviewed")])
+
+(defn review-project-row [review reviewed-project-ids project]
+  (let [reviewed? (contains? reviewed-project-ids (:project-id project))]
+    [:div {:key (:project-id project)
+           :class "grid gap-2 p-3 lg:grid-cols-[1fr_auto] lg:items-center"}
+     (project-summary-row project)
+     [:button {:class (str "btn btn-sm " (if reviewed? "btn-success" "btn-outline"))
+               :disabled reviewed?
+               :data-on:click (command-click "todo/mark-project-reviewed"
+                                             {:review-id (:review-id review)
+                                              :project-id (:project-id project)})}
+      (if reviewed? "Reviewed" "Mark reviewed")]]))
+
+(defn review-project-list [review reviewed-project-ids projects]
+  (if (seq projects)
+    [:div {:class "divide-y divide-base-300 rounded-box border border-base-300 bg-base-100 shadow-sm"}
+     (for [project projects]
+       (review-project-row review reviewed-project-ids project))]
+    (empty-state "No active projects to review.")))
+
+(defn review-page [{:keys [buckets deferred due-soon inactive projects review-projects projects-without-next-action review]}]
   (shell {:title "Weekly Review"}
          (action-error)
          [:section {:class "space-y-4"}
           (if (= :active (:status review))
-            [:div {:class "space-y-4"}
-             [:p {:class "text-sm text-base-content/70"} "Review each bucket and active project."]
-             [:div {:class "grid gap-3 md:grid-cols-2"}
-              (for [bucket [:inbox :next :waiting :someday]]
-                [:button {:key bucket
-                          :class "btn btn-outline justify-between"
-                          :data-on:click (command-click "todo/mark-bucket-reviewed"
-                                                        {:review-id (:review-id review)
-                                                         :bucket (name bucket)})}
-                 (get bucket-labels bucket)
-                 [:span {:class "badge"} (count (get buckets bucket))]])]
-             [:div {:class "space-y-2"}
-              (for [{:keys [project-id name]} projects]
-                [:button {:key project-id
-                          :class "btn btn-outline w-full justify-start"
-                          :data-on:click (command-click "todo/mark-project-reviewed"
-                                                        {:review-id (:review-id review)
-                                                         :project-id project-id})}
-                 name])]
-             [:button {:class "btn btn-primary"
-                       :data-on:click (command-click "todo/complete-weekly-review"
-                                                     {:review-id (:review-id review)})}
-              "Complete review"]]
+            (let [reviewed-buckets (:reviewed-buckets review)
+                  reviewed-project-ids (:reviewed-project-ids review)
+                  review-projects (or review-projects projects)
+                  all-buckets-reviewed? (every? reviewed-buckets [:inbox :next :waiting :someday])
+                  all-projects-reviewed? (every? reviewed-project-ids (map :project-id review-projects))
+                  review-complete? (and all-buckets-reviewed? all-projects-reviewed?)]
+              [:div {:class "space-y-8"}
+               [:div {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
+                [:p {:class "text-sm font-medium"} "Review each bucket and active project."]
+                [:div {:class "mt-3 flex flex-wrap gap-2 text-xs text-base-content/70"}
+                 [:span {:class "badge badge-outline"}
+                  (str (count reviewed-buckets) "/4 buckets reviewed")]
+                 [:span {:class "badge badge-outline"}
+                  (str (count reviewed-project-ids) "/" (count review-projects) " projects reviewed")]]]
+               [:div {:class "grid gap-8 xl:grid-cols-2"}
+                (for [bucket [:inbox :next :waiting :someday]
+                      :let [tasks (get buckets bucket)
+                            reviewed? (contains? reviewed-buckets bucket)]]
+                  (page-section {:title (get bucket-labels bucket)
+                                 :count (count tasks)
+                                 :status (if reviewed? "This bucket has been reviewed." "Inspect these tasks, then mark the bucket reviewed.")
+                                 :action (review-bucket-action review bucket reviewed?)}
+                                (task-summary-list tasks "Nothing here." projects)))]
+               (page-section {:title "Due Soon" :count (count due-soon)}
+                             (task-summary-list due-soon "No due dates yet." projects))
+               (page-section {:title "Deferred" :count (count deferred)}
+                             (task-summary-list deferred "No deferred tasks." projects))
+               (page-section {:title "Projects Without Next Actions"
+                              :count (count projects-without-next-action)
+                              :status "These active projects may need a next action."}
+                             (project-summary-list projects-without-next-action "Every active project has an active task."))
+               (page-section {:title "Active Projects"
+                              :count (count review-projects)
+                              :status "Review each active project for stale outcomes and next actions."}
+                             (review-project-list review reviewed-project-ids review-projects))
+               (page-section {:title "Done / Canceled" :count (count inactive)}
+                             (task-summary-list inactive "No recently completed or canceled tasks." projects))
+               [:button {:class "btn btn-primary"
+                         :disabled (not review-complete?)
+                         :data-on:click (command-click "todo/complete-weekly-review"
+                                                       {:review-id (:review-id review)})}
+                "Complete review"]])
             [:button {:class "btn btn-primary"
                       :data-on:click "$['command/name'] = 'todo/start-weekly-review'; @post('/actions');"}
              "Start weekly review"])]))
