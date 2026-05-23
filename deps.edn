@@ -1,0 +1,31 @@
+{:paths ["src" "resources"]
+ :deps {obneyai/grain-core-v2
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :sha "a4d9dbbfd8b95e67a35adbe17198f7b017722c58"
+         :deps/root "projects/grain-core-v2"}
+
+        obneyai/grain-datastar
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :sha "a4d9dbbfd8b95e67a35adbe17198f7b017722c58"
+         :deps/root "projects/grain-datastar"}
+
+        obneyai/grain-event-store-sqlite-v3
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :sha "a4d9dbbfd8b95e67a35adbe17198f7b017722c58"
+         :deps/root "projects/grain-event-store-sqlite-v3"}
+
+        obneyai/orc {:git/url "https://github.com/ObneyAI/orc.git"
+                     :git/sha "7fbfb5464aeba1636fe4856041ee33696bd30dd5"
+                     :deps/root "projects/orc"}
+
+        integrant/integrant {:mvn/version "1.0.1"}}
+ :aliases
+ {:dev {:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                   "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}
+  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.5"}
+                 slipset/deps-deploy {:mvn/version "0.2.2"}}
+          :ns-default build}
+  :test {:extra-paths ["test"]
+         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
+                      io.github.cognitect-labs/test-runner
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}}}}
