@@ -103,12 +103,6 @@ Run clj-kondo:
 clj-kondo --lint src test
 ```
 
-Sync clj-kondo dependency configs and Grain macro hooks:
-
-```sh
-clj-kondo --copy-configs --dependencies --lint "$(clojure -Spath):/Users/obneyai/Documents/code2/grain/projects/grain-core/resources"
-```
-
 ## Notes
 
 - Datastar pages are generated from Grain query metadata via `ds/routes`.
