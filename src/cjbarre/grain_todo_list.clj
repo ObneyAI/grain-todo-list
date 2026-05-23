@@ -8,7 +8,7 @@
             [ai.obney.grain.command-processor-v2.interface :as cp :refer [defcommand]]
             [ai.obney.grain.query-processor.interface :as query-processor :refer [defquery]]
             [ai.obney.grain.datastar.interface :as ds]
-            [ai.obney.grain.event-store-v3.interface :as es]
+            [ai.obney.grain.event-store-v3.interface :as es :refer [->event]]
             [ai.obney.grain.read-model-processor-v2.interface :as rmp :refer [defreadmodel]]
             [ai.obney.grain.schema-util.interface :refer [defschemas]]
             [ai.obney.grain.pubsub.interface :as ps]
@@ -516,18 +516,6 @@
   [tasks]
   (+ 1000 (or (some->> tasks (map :order) seq (apply max)) 0)))
 
-(defn todo-event
-  [type tags body]
-  (es/->event {:type type :tags tags :body body}))
-
-(defn task-tags
-  [task-id & [project-id]]
-  (cond-> #{[:task task-id]}
-    project-id (conj [:project project-id])))
-
-(defn project-tags [project-id] #{[:project project-id]})
-(defn review-tags [review-id] #{[:review review-id]})
-
 (defn require-task
   [ctx task-id]
   (or (get (all-tasks ctx) task-id)
@@ -537,12 +525,6 @@
   [ctx project-id]
   (or (get (all-projects ctx) project-id)
       (not-found "Project not found.")))
-
-(defn command-events
-  ([events] (command-events events nil))
-  ([events signals]
-   (cond-> {:command-result/events events}
-     signals (assoc :datastar/signals signals))))
 
 (defcommand :todo capture-task
   {:authorized? (constantly true)}
@@ -558,18 +540,18 @@
       (and project (not= :active (:status project))) (conflict "Cannot assign a task to an inactive project.")
       :else
       (let [order (or order (next-order (tasks-for-bucket ctx bucket)))]
-        (command-events
-         [(todo-event :todo/task-captured
-                      (if project-id (task-tags task-id project-id) (task-tags task-id))
-                      (cond-> {:task-id task-id
-                               :title title
-                               :bucket bucket
-                               :status :active
-                               :order order}
-                        project-id (assoc :project-id project-id)
-                        due-at (assoc :due-at due-at)
-                        defer-until (assoc :defer-until defer-until)))]
-         {:title "" :__toast "Task captured."})))))
+        {:command-result/events
+         [(->event {:type :todo/task-captured
+                    :tags #{[:task task-id]}
+                    :body (cond-> {:task-id task-id
+                                   :title title
+                                   :bucket bucket
+                                   :status :active
+                                   :order order}
+                            project-id (assoc :project-id project-id)
+                            due-at (assoc :due-at due-at)
+                            defer-until (assoc :defer-until defer-until))})]
+         :datastar/signals {:title "" :__toast "Task captured."}}))))
 
 (defcommand :todo rename-task
   {:authorized? (constantly true)}
@@ -577,9 +559,11 @@
   (let [task (require-task ctx task-id)]
     (if (contains? task ::anom/category)
       task
-      (command-events [(todo-event :todo/task-renamed (task-tags task-id (:project-id task))
-                                   {:task-id task-id :title title})]
-                      {:__toast "Task renamed."}))))
+      {:command-result/events
+       [(->event {:type :todo/task-renamed
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id :title title}})]
+       :datastar/signals {:__toast "Task renamed."}})))
 
 (defcommand :todo move-task-to-bucket
   {:authorized? (constantly true)}
@@ -590,8 +574,10 @@
       (not= :active (:status task)) (conflict "Only active tasks can be moved.")
       :else
       (let [order (or order (next-order (tasks-for-bucket ctx bucket)))]
-        (command-events [(todo-event :todo/task-moved-to-bucket (task-tags task-id (:project-id task))
-                                     {:task-id task-id :bucket bucket :order order})])))))
+        {:command-result/events
+         [(->event {:type :todo/task-moved-to-bucket
+                    :tags #{[:task task-id]}
+                    :body {:task-id task-id :bucket bucket :order order}})]}))))
 
 (defcommand :todo assign-task-to-project
   {:authorized? (constantly true)}
@@ -604,8 +590,10 @@
       (not= :active (:status task)) (conflict "Only active tasks can be assigned.")
       (not= :active (:status project)) (conflict "Cannot assign to an inactive project.")
       :else
-      (command-events [(todo-event :todo/task-assigned-to-project (task-tags task-id project-id)
-                                   {:task-id task-id :project-id project-id})]))))
+      {:command-result/events
+       [(->event {:type :todo/task-assigned-to-project
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id :project-id project-id}})]})))
 
 (defcommand :todo remove-task-from-project
   {:authorized? (constantly true)}
@@ -615,8 +603,10 @@
       (contains? task ::anom/category) task
       (not (:project-id task)) (conflict "Task is not assigned to a project.")
       :else
-      (command-events [(todo-event :todo/task-removed-from-project (task-tags task-id (:project-id task))
-                                   {:task-id task-id :project-id (:project-id task)})]))))
+      {:command-result/events
+       [(->event {:type :todo/task-removed-from-project
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id :project-id (:project-id task)}})]})))
 
 (defcommand :todo set-task-due-at
   {:authorized? (constantly true)}
@@ -625,8 +615,10 @@
         due-at (coerce-offset-date-time due-at)]
     (if (contains? task ::anom/category)
       task
-      (command-events [(todo-event :todo/task-due-at-set (task-tags task-id (:project-id task))
-                                   {:task-id task-id :due-at due-at})]))))
+      {:command-result/events
+       [(->event {:type :todo/task-due-at-set
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id :due-at due-at}})]})))
 
 (defcommand :todo clear-task-due-at
   {:authorized? (constantly true)}
@@ -634,8 +626,10 @@
   (let [task (require-task ctx task-id)]
     (if (contains? task ::anom/category)
       task
-      (command-events [(todo-event :todo/task-due-at-cleared (task-tags task-id (:project-id task))
-                                   {:task-id task-id})]))))
+      {:command-result/events
+       [(->event {:type :todo/task-due-at-cleared
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id}})]})))
 
 (defcommand :todo defer-task
   {:authorized? (constantly true)}
@@ -644,8 +638,10 @@
         defer-until (coerce-offset-date-time defer-until)]
     (if (contains? task ::anom/category)
       task
-      (command-events [(todo-event :todo/task-deferred (task-tags task-id (:project-id task))
-                                   {:task-id task-id :defer-until defer-until})]))))
+      {:command-result/events
+       [(->event {:type :todo/task-deferred
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id :defer-until defer-until}})]})))
 
 (defcommand :todo clear-task-defer-date
   {:authorized? (constantly true)}
@@ -653,8 +649,10 @@
   (let [task (require-task ctx task-id)]
     (if (contains? task ::anom/category)
       task
-      (command-events [(todo-event :todo/task-defer-date-cleared (task-tags task-id (:project-id task))
-                                   {:task-id task-id})]))))
+      {:command-result/events
+       [(->event {:type :todo/task-defer-date-cleared
+                  :tags #{[:task task-id]}
+                  :body {:task-id task-id}})]})))
 
 (defcommand :todo complete-task
   {:authorized? (constantly true)}
@@ -663,9 +661,11 @@
     (cond
       (contains? task ::anom/category) task
       (not= :active (:status task)) (conflict "Only active tasks can be completed.")
-      :else (command-events [(todo-event :todo/task-completed (task-tags task-id (:project-id task))
-                                         {:task-id task-id})]
-                            {:__toast "Task completed."}))))
+      :else {:command-result/events
+             [(->event {:type :todo/task-completed
+                        :tags #{[:task task-id]}
+                        :body {:task-id task-id}})]
+             :datastar/signals {:__toast "Task completed."}})))
 
 (defcommand :todo archive-task
   {:authorized? (constantly true)}
@@ -674,8 +674,10 @@
     (cond
       (contains? task ::anom/category) task
       (not= :completed (:status task)) (conflict "Only completed tasks can be archived.")
-      :else (command-events [(todo-event :todo/task-archived (task-tags task-id (:project-id task))
-                                         {:task-id task-id})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/task-archived
+                        :tags #{[:task task-id]}
+                        :body {:task-id task-id}})]})))
 
 (defcommand :todo cancel-task
   {:authorized? (constantly true)}
@@ -684,8 +686,10 @@
     (cond
       (contains? task ::anom/category) task
       (#{:canceled :archived} (:status task)) (conflict "Task is already inactive.")
-      :else (command-events [(todo-event :todo/task-canceled (task-tags task-id (:project-id task))
-                                         {:task-id task-id})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/task-canceled
+                        :tags #{[:task task-id]}
+                        :body {:task-id task-id}})]})))
 
 (defcommand :todo reactivate-task
   {:authorized? (constantly true)}
@@ -694,8 +698,10 @@
     (cond
       (contains? task ::anom/category) task
       (not (#{:completed :canceled} (:status task))) (conflict "Only completed or canceled tasks can be reactivated.")
-      :else (command-events [(todo-event :todo/task-reactivated (task-tags task-id (:project-id task))
-                                         {:task-id task-id})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/task-reactivated
+                        :tags #{[:task task-id]}
+                        :body {:task-id task-id}})]})))
 
 (defcommand :todo reorder-task
   {:authorized? (constantly true)}
@@ -704,16 +710,20 @@
     (cond
       (contains? task ::anom/category) task
       (not= :active (:status task)) (conflict "Only active tasks can be reordered.")
-      :else (command-events [(todo-event :todo/task-reordered (task-tags task-id (:project-id task))
-                                         {:task-id task-id :order order})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/task-reordered
+                        :tags #{[:task task-id]}
+                        :body {:task-id task-id :order order}})]})))
 
 (defcommand :todo create-project
   {:authorized? (constantly true)}
   [{{:keys [project-id name]} :command}]
   (let [project-id (or project-id (random-uuid))]
-    (command-events [(todo-event :todo/project-created (project-tags project-id)
-                                 {:project-id project-id :name name :status :active})]
-                    {:projectName "" :__toast "Project created."})))
+    {:command-result/events
+     [(->event {:type :todo/project-created
+                :tags #{[:project project-id]}
+                :body {:project-id project-id :name name :status :active}})]
+     :datastar/signals {:projectName "" :__toast "Project created."}}))
 
 (defcommand :todo rename-project
   {:authorized? (constantly true)}
@@ -721,8 +731,10 @@
   (let [project (require-project ctx project-id)]
     (if (contains? project ::anom/category)
       project
-      (command-events [(todo-event :todo/project-renamed (project-tags project-id)
-                                   {:project-id project-id :name name})]))))
+      {:command-result/events
+       [(->event {:type :todo/project-renamed
+                  :tags #{[:project project-id]}
+                  :body {:project-id project-id :name name}})]})))
 
 (defcommand :todo complete-project
   {:authorized? (constantly true)}
@@ -731,8 +743,10 @@
     (cond
       (contains? project ::anom/category) project
       (not= :active (:status project)) (conflict "Only active projects can be completed.")
-      :else (command-events [(todo-event :todo/project-completed (project-tags project-id)
-                                         {:project-id project-id})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/project-completed
+                        :tags #{[:project project-id]}
+                        :body {:project-id project-id}})]})))
 
 (defcommand :todo cancel-project
   {:authorized? (constantly true)}
@@ -741,8 +755,10 @@
     (cond
       (contains? project ::anom/category) project
       (not= :active (:status project)) (conflict "Only active projects can be canceled.")
-      :else (command-events [(todo-event :todo/project-canceled (project-tags project-id)
-                                         {:project-id project-id})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/project-canceled
+                        :tags #{[:project project-id]}
+                        :body {:project-id project-id}})]})))
 
 (defcommand :todo reactivate-project
   {:authorized? (constantly true)}
@@ -751,8 +767,10 @@
     (cond
       (contains? project ::anom/category) project
       (not (#{:completed :canceled} (:status project))) (conflict "Only inactive projects can be reactivated.")
-      :else (command-events [(todo-event :todo/project-reactivated (project-tags project-id)
-                                         {:project-id project-id})]))))
+      :else {:command-result/events
+             [(->event {:type :todo/project-reactivated
+                        :tags #{[:project project-id]}
+                        :body {:project-id project-id}})]})))
 
 (defcommand :todo start-weekly-review
   {:authorized? (constantly true)}
@@ -763,8 +781,10 @@
       :else
       (let [review-id (or review-id (random-uuid))
             started-at (OffsetDateTime/now)]
-        (command-events [(todo-event :todo/weekly-review-started (review-tags review-id)
-                                     {:review-id review-id :started-at started-at})])))))
+        {:command-result/events
+         [(->event {:type :todo/weekly-review-started
+                    :tags #{[:review review-id]}
+                    :body {:review-id review-id :started-at started-at}})]}))))
 
 (defcommand :todo mark-project-reviewed
   {:authorized? (constantly true)}
@@ -776,8 +796,10 @@
       (not= review-id (:review-id review)) (conflict "Review is not active.")
       (not= :active (:status review)) (conflict "Review is not active.")
       :else
-      (command-events [(todo-event :todo/project-reviewed (review-tags review-id)
-                                   {:review-id review-id :project-id project-id})]))))
+      {:command-result/events
+       [(->event {:type :todo/project-reviewed
+                  :tags #{[:review review-id]}
+                  :body {:review-id review-id :project-id project-id}})]})))
 
 (defcommand :todo mark-bucket-reviewed
   {:authorized? (constantly true)}
@@ -787,8 +809,10 @@
       (not= review-id (:review-id review)) (conflict "Review is not active.")
       (not= :active (:status review)) (conflict "Review is not active.")
       :else
-      (command-events [(todo-event :todo/bucket-reviewed (review-tags review-id)
-                                   {:review-id review-id :bucket bucket})]))))
+      {:command-result/events
+       [(->event {:type :todo/bucket-reviewed
+                  :tags #{[:review review-id]}
+                  :body {:review-id review-id :bucket bucket}})]})))
 
 (defcommand :todo complete-weekly-review
   {:authorized? (constantly true)}
@@ -801,8 +825,10 @@
       (not (set/subset? buckets (:reviewed-buckets review))) (conflict "All buckets must be reviewed.")
       (not (set/subset? active-project-ids (:reviewed-project-ids review))) (conflict "All active projects must be reviewed.")
       :else
-      (command-events [(todo-event :todo/weekly-review-completed (review-tags review-id)
-                                   {:review-id review-id :completed-at (OffsetDateTime/now)})]))))
+      {:command-result/events
+       [(->event {:type :todo/weekly-review-completed
+                  :tags #{[:review review-id]}
+                  :body {:review-id review-id :completed-at (OffsetDateTime/now)}})]})))
 
 ;; ------- ;;
 ;; Queries ;;

@@ -192,7 +192,7 @@
         (let [result (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
               event (event-of-type result :todo/task-assigned-to-project)]
           (is event)
-          (is (= #{[:task task-id] [:project project-id]} (:event/tags event)))
+          (is (= #{[:task task-id]} (:event/tags event)))
           (is (= project-id (get-in (project-tasks ctx) [task-id :project-id])))))
       (testing "inactive projects reject assignment"
         (process! ctx :todo/cancel-project {:project-id project-id})
