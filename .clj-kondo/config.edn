@@ -1,0 +1,5 @@
+{:hooks {:analyze-call {ai.obney.grain.command-processor-v2.interface/defcommand hooks.grain/defcommand
+                        ai.obney.grain.read-model-processor-v2.interface/defreadmodel hooks.grain/defreadmodel}}
+ :linters {:clojure-lsp/unused-public-var
+           {:exclude-when-defined-by #{ai.obney.grain.command-processor-v2.interface/defcommand
+                                       ai.obney.grain.read-model-processor-v2.interface/defreadmodel}}}}
