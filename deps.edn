@@ -1,17 +1,17 @@
 {:paths ["src" "resources"]
  :deps {obneyai/grain-core-v2
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "a4d9dbbfd8b95e67a35adbe17198f7b017722c58"
+         :sha "9ed2ab04f70f62b115ca237f77673f55cd3f672d"
          :deps/root "projects/grain-core-v2"}
 
         obneyai/grain-datastar
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "a4d9dbbfd8b95e67a35adbe17198f7b017722c58"
+         :sha "9ed2ab04f70f62b115ca237f77673f55cd3f672d"
          :deps/root "projects/grain-datastar"}
 
         obneyai/grain-event-store-sqlite-v3
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "a4d9dbbfd8b95e67a35adbe17198f7b017722c58"
+         :sha "9ed2ab04f70f62b115ca237f77673f55cd3f672d"
          :deps/root "projects/grain-event-store-sqlite-v3"}
 
         obneyai/orc {:git/url "https://github.com/ObneyAI/orc.git"
