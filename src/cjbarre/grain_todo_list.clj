@@ -278,7 +278,8 @@
    :todo/tasks-page [:map [:bucket {:optional true} ::bucket]]
    :todo/projects-page [:map]
    :todo/project-page [:map [:project-id :uuid]]
-   :todo/review-page [:map]})
+   :todo/review-page [:map]
+   :todo/dev-gallery-page [:map]})
 
 ;; ----------- ;;
 ;; Read Models ;;
@@ -940,6 +941,14 @@
   (let [data (workspace-data ctx)]
     {:query/result data
      :datastar/hiccup (ui/review-page data)}))
+
+(defquery :todo dev-gallery-page
+  {:authorized? (constantly true)
+   :datastar/path "/dev/gallery"
+   :datastar/title "Dev UI Gallery"}
+  [ctx]
+  {:query/result {}
+   :datastar/hiccup (ui/dev-gallery-page)})
 
 ;; --------------- ;;
 ;; Todo Processors ;;

@@ -7,6 +7,7 @@
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
             [cjbarre.grain-todo-list :as app]
             [cjbarre.grain-todo-list.ui :as ui]
+            [cjbarre.grain-todo-list.ui.components :as c]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [cognitect.anomalies :as anom]
             [malli.core :as m])
@@ -263,7 +264,12 @@
           (is (= "Timed review item" (get-in query-result [:due-soon 0 :title])))
           (is (= "Timed review item" (get-in query-result [:deferred 0 :title])))
           (is (= "Counted project" (get-in query-result [:review-projects 0 :name])))
-          (is (empty? (:projects-without-next-action query-result))))))))
+          (is (empty? (:projects-without-next-action query-result)))))
+      (testing "dev gallery query renders inert gallery Hiccup"
+        (let [result (run-query ctx :todo/dev-gallery-page {})]
+          (is (not (anomaly? result)))
+          (is (= :div#app (first (:datastar/hiccup result))))
+          (is (some #(= "Dev UI Gallery" %) (tree-seq coll? seq (:datastar/hiccup result)))))))))
 
 (deftest weekly-review-command-and-projection-tests
   (with-context
@@ -294,19 +300,19 @@
 (deftest pure-ui-rendering-tests
   (testing "UI substrate primitives render reusable section, empty, and summary surfaces"
     (let [hiccup [:div
-                  (ui/page-section {:title "Substrate" :count 2}
-                                   (ui/empty-state "Nothing to show."))
-                  (ui/task-summary-row {:task-id task-id
-                                        :title "Summary task"
-                                        :bucket :next
-                                        :status :active
-                                        :order 1000
-                                        :due-at later}
-                                       [{:project-id project-id :name "Project"}])
-                  (ui/project-summary-row {:project-id project-id
-                                           :name "Summary project"
-                                           :status :active
-                                           :task-counts {:active 1 :completed 0}})]
+                  (c/page-section {:title "Substrate" :count 2}
+                                  (c/empty-state "Nothing to show."))
+                  (c/task-summary-row {:task-id task-id
+                                       :title "Summary task"
+                                       :bucket :next
+                                       :status :active
+                                       :order 1000
+                                       :due-at later}
+                                      [{:project-id project-id :name "Project"}])
+                  (c/project-summary-row {:project-id project-id
+                                          :name "Summary project"
+                                          :status :active
+                                          :task-counts {:active 1 :completed 0}})]
           leaves (tree-seq coll? seq hiccup)]
       (is (some #(= "Substrate" %) leaves))
       (is (some #(= "Nothing to show." %) leaves))
@@ -357,4 +363,13 @@
       (is (some #(= "2/4 buckets reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "1/1 projects reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "Review due" %) (tree-seq coll? seq hiccup)))
-      (is (some #(= "Projects Without Next Actions" %) (tree-seq coll? seq hiccup))))))
+      (is (some #(= "Projects Without Next Actions" %) (tree-seq coll? seq hiccup)))))
+
+  (testing "dev gallery renders canonical fixtures without command post actions"
+    (let [hiccup (ui/dev-gallery-page)
+          leaves (tree-seq coll? seq hiccup)]
+      (is (= :div#app (first hiccup)))
+      (is (some #(= "Dev UI Gallery" %) leaves))
+      (is (some #(= "Draft inbox capture conventions" %) leaves))
+      (is (some #(= "Launch reference workflow" %) leaves))
+      (is (not (some #(= "@post('/actions');" %) leaves))))))
