@@ -76,9 +76,9 @@
 (defn surface-class
   [variant class]
   (let [base (case variant
-               :app "app-vista rounded-[1.25rem] border border-white/60 p-4 shadow-xl sm:p-6"
                :gallery "gallery-variant scroll-mt-4 rounded-[1.25rem] p-px"
                :gallery-chrome "gallery-variant-chrome rounded-[inherit] p-4 md:p-5"
+               :panel "home-panel rounded-box border border-base-300 bg-base-100/65 p-4 shadow-sm sm:p-5"
                :card "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"
                :compact-card "rounded-box border border-base-300 bg-base-100 p-3 shadow-sm"
                :list "divide-y divide-base-300 rounded-box border border-base-300 bg-base-100 shadow-sm"
@@ -208,14 +208,14 @@
   [:div#app
    [:main {:class "gallery-page min-h-screen bg-base-100 text-base-content"}
     [:div {:class "mx-auto max-w-6xl px-4 py-8"}
-     (apply surface
-            {:variant :app}
-            [:header {:class "mb-8 flex flex-col gap-2 border-b border-base-300 pb-6"}
-             (product-label "Grain Todo")
-             (page-title title)
-             [:p {:class "max-w-2xl text-sm text-base-content/70"}
-              "A personal GTD workspace backed by Grain events and Datastar updates."]]
-            body)]]])
+     (into
+      [:div {:class "app-vista"}
+       [:header {:class "mb-8 flex flex-col gap-2"}
+        (product-label "Grain Todo")
+        (page-title title)
+        [:p {:class "max-w-2xl text-sm text-base-content/70"}
+         "A personal GTD workspace backed by Grain events and Datastar updates."]]]
+      body)]]])
 
 (defn action-error []
   [:div {:data-show "$error" :class "alert alert-error mb-4"}
@@ -234,6 +234,18 @@
   [:section {:class (str "space-y-3" (when class (str " " class)))}
    (section-heading {:title title :count count :status status :action action})
    body])
+
+(defn panel
+  [{:keys [title count status action class]} & body]
+  (surface {:tag :section
+            :variant :panel
+            :class class}
+           (section-heading {:title title :count count :status status :action action})
+           (into [:div {:class "mt-4 grid gap-4"}] body)))
+
+(defn panel-stack
+  [& body]
+  (into [:div {:class "grid gap-5"}] body))
 
 (defn quick-add [{:keys [bucket project-id]}]
   [:form {:class (surface-class :form nil)
@@ -734,6 +746,9 @@
          (metadata-text "Metadata and supporting text.")])
        (fundamental-tray
         "Surfaces"
+        (panel {:title "Panel surface"
+                :status "Groups related workflow content."}
+               (empty-state "Quiet panel well."))
         (surface {:variant :compact-card}
                  [:p {:class "text-sm font-medium"} "Card surface"]
                  [:p {:class "mt-1 text-sm text-base-content/70"} "Lightweight bordered content."])
@@ -829,6 +844,29 @@
        (review-bucket-action gallery-review :inbox true)
        (review-bucket-action gallery-review :waiting false)]]])])
 
+(defn gallery-home-panel-sample
+  [active-task active-project]
+  [:div {:class "grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]"}
+   (panel {:title "Workflow"
+           :status "Panelized bucket groups keep cards from floating on the glass."
+           :count 1}
+          (quick-add {:bucket :inbox})
+          (page-section {:title "Inbox"
+                         :count 1
+                         :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
+                        (task-list [active-task] "Nothing here." gallery-projects))
+          (page-section {:title "Next"
+                         :count 0
+                         :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
+                        (task-list [] "Nothing here." gallery-projects)))
+   [:div {:class "grid gap-4 content-start"}
+    (panel {:title "Projects"
+            :count 1}
+           (project-add)
+           (projects-list [active-project]))
+    (panel {:title "Weekly Review"
+            :status "No active weekly review."})]])
+
 (defn gallery-specimen
   [{:keys [compact?]}]
   (let [[active-task waiting-task completed-task] gallery-tasks
@@ -838,6 +876,10 @@
                                 :name "Canceled project"
                                 :status :canceled)]
     [:div {:class "space-y-8"}
+     (gallery-section {:title "Home Panels"
+                       :status "Screen-level panels provide the main dashboard hierarchy."}
+                      (inert (gallery-home-panel-sample active-task active-project)))
+
      (gallery-section {:title "Forms and Alerts"
                        :status "Capture forms, project creation, and transient error messaging."}
                       [:div {:class "grid gap-4 lg:grid-cols-[1.3fr_0.9fr]"}

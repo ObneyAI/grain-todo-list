@@ -68,8 +68,7 @@
     min-height: 1.65rem;
   }
 
-  .gallery-vista,
-  .app-vista {
+  .gallery-vista {
     position: relative;
     isolation: isolate;
     background:
@@ -80,18 +79,16 @@
     color: rgb(20 35 51);
   }
 
+  .app-vista {
+    color: rgb(20 35 51);
+  }
+
   .gallery-vista {
     overflow: hidden;
     box-shadow: 0 26px 72px rgb(30 79 126 / 0.22);
   }
 
-  .app-vista {
-    overflow: hidden;
-    box-shadow: 0 22px 60px rgb(30 79 126 / 0.16);
-  }
-
-  .gallery-vista::before,
-  .app-vista::before {
+  .gallery-vista::before {
     position: absolute;
     inset: -20%;
     z-index: -1;
@@ -144,6 +141,28 @@
     color: rgb(54 76 97 / 0.82);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.86), 0 8px 20px rgb(34 78 119 / 0.08);
     backdrop-filter: blur(10px) saturate(1.04);
+  }
+
+  :is(.gallery-vista, .app-vista) .home-panel {
+    border-color: rgb(255 255 255 / 0.78) !important;
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.76), rgb(236 248 255 / 0.48) 54%, rgb(206 230 246 / 0.34)),
+      rgb(241 250 255 / 0.42) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.94), 0 24px 54px rgb(35 83 126 / 0.2), 0 2px 8px rgb(26 67 106 / 0.08);
+    backdrop-filter: blur(22px) saturate(1.22);
+  }
+
+  :is(.gallery-vista, .app-vista) .home-panel .rounded-box {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.82), 0 8px 18px rgb(34 78 119 / 0.1);
+  }
+
+  :is(.gallery-vista, .app-vista) .home-panel .empty-state {
+    border-color: rgb(79 126 169 / 0.22) !important;
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.7), rgb(241 249 254 / 0.48)),
+      rgb(238 248 254 / 0.52) !important;
+    color: rgb(49 70 91 / 0.78);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8), 0 4px 12px rgb(34 78 119 / 0.08);
   }
 
   :is(.gallery-vista, .app-vista) .input,

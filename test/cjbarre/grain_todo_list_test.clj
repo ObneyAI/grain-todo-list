@@ -317,6 +317,9 @@
     (let [hiccup [:div
                   (c/page-section {:title "Substrate" :count 2}
                                   (c/empty-state "Nothing to show."))
+                  (c/panel {:title "Panel Primitive"
+                            :status "Grouped surface"}
+                           (c/empty-state "Quiet well."))
                   (c/task-summary-row {:task-id task-id
                                        :title "Summary task"
                                        :bucket :next
@@ -331,6 +334,8 @@
           leaves (tree-seq coll? seq hiccup)
           attrs (filter map? leaves)]
       (is (some #(= "Substrate" %) leaves))
+      (is (some #(= "Panel Primitive" %) leaves))
+      (is (some #(= "Quiet well." %) leaves))
       (is (some #(= "Nothing to show." %) leaves))
       (is (some #(= "Summary task" %) leaves))
       (is (some #(= "Summary project" %) leaves))
@@ -350,8 +355,17 @@
                                 :due-soon []
                                 :projects []
                                 :review {}})]
-      (is (= :div#app (first hiccup)))
-      (is (some #(= "UI task" %) (tree-seq coll? seq hiccup)))))
+      (let [leaves (tree-seq coll? seq hiccup)
+            attrs (filter map? leaves)]
+        (is (= :div#app (first hiccup)))
+        (is (some #(= "Workflow" %) leaves))
+        (is (some #(= "Planning" %) leaves))
+        (is (some #(= "Projects" %) leaves))
+        (is (some #(= "Weekly Review" %) leaves))
+        (is (some #(= "Capture a task" %) leaves))
+        (is (some #(= "UI task" %) leaves))
+        (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
+        (is (some #(= "/review" (:href %)) attrs)))))
 
   (testing "review page exposes projection-derived progress without running processors"
     (let [hiccup (ui/review-page {:buckets {:inbox []
@@ -398,6 +412,8 @@
       (is (some #(= "Actions" %) leaves))
       (is (some #(= "Status" %) leaves))
       (is (some #(= "Feedback" %) leaves))
+      (is (some #(= "Panel surface" %) leaves))
+      (is (some #(= "Home Panels" %) leaves))
       (is (some #(= "Vista Aero Minimal" %) leaves))
       (is (not (some #(= "Aero Glass Console" %) leaves)))
       (is (not (some #(= "Windows 7 Productivity" %) leaves)))

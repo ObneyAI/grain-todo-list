@@ -7,30 +7,44 @@
 (defn home-page [{:keys [buckets deferred due-soon inactive projects review]}]
   (shell {:title "GTD Workspace"}
          (c/action-error)
-         [:div {:class "mb-8 grid gap-4 lg:grid-cols-[2fr_1fr]"}
-          (c/quick-add {:bucket :inbox})
-          (c/project-add)]
-         [:div {:class "grid gap-8 lg:grid-cols-[2fr_1fr]"}
-          [:div {:class "space-y-8"}
-           (for [bucket [:inbox :next :waiting :someday]]
-             (with-meta (c/bucket-section bucket (get buckets bucket) projects) {:key bucket}))
-           (c/page-section {:title "Deferred" :count (count deferred)}
-                           (c/task-list deferred "No deferred tasks." projects))
-           (c/page-section {:title "Due Soon" :count (count due-soon)}
-                           (c/due-soon-list due-soon projects))
-           (c/page-section {:title "Done / Canceled" :count (count inactive)}
-                           (c/task-list inactive "No completed or canceled tasks." projects))]
-          [:aside {:class "space-y-6"}
-           (c/page-section {:title "Projects" :count (count projects)}
-                           (c/projects-list projects))
+         [:div {:class "grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"}
+          [:div {:class "grid gap-6"}
+           (c/panel {:title "Workflow"
+                     :status "Current buckets for active work and parked ideas."}
+                    (c/quick-add {:bucket :inbox})
+                    (for [bucket [:inbox :next :waiting :someday]]
+                      (with-meta
+                        (c/page-section {:title (get c/bucket-labels bucket)
+                                         :count (count (get buckets bucket))
+                                         :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
+                                        (c/task-list (get buckets bucket) "Nothing here." projects))
+                        {:key bucket})))
+           (c/panel {:title "Planning"
+                     :status "Scheduled, deferred, and recently closed work."}
+                    (c/page-section {:title "Deferred"
+                                     :count (count deferred)
+                                     :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
+                                    (c/task-list deferred "No deferred tasks." projects))
+                    (c/page-section {:title "Due Soon"
+                                     :count (count due-soon)
+                                     :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
+                                    (c/due-soon-list due-soon projects))
+                    (c/page-section {:title "Done / Canceled"
+                                     :count (count inactive)
+                                     :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
+                                    (c/task-list inactive "No completed or canceled tasks." projects)))]
+          [:aside {:class "grid content-start gap-6"}
+           (c/panel {:title "Projects"
+                     :count (count projects)}
+                    (c/project-add)
+                    (c/projects-list projects))
            [:a {:class "block rounded-box focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 :href "/review"
                 :aria-label "Weekly review"}
-            (c/page-section {:title "Weekly Review"
-                             :status (if (= :active (:status review))
-                                       "A weekly review is active."
-                                       "No active weekly review.")
-                             :class (c/surface-class :card nil)})]]]))
+            (c/panel {:title "Weekly Review"
+                      :status (if (= :active (:status review))
+                                "A weekly review is active."
+                                "No active weekly review.")})]]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
   (shell {:title (str (get c/bucket-labels bucket "Tasks") " Tasks")}
