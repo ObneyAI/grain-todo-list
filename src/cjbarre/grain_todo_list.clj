@@ -276,6 +276,7 @@
 
    :todo/home-page [:map]
    :todo/tasks-page [:map [:bucket {:optional true} ::bucket]]
+   :todo/task-page [:map [:task-id :uuid]]
    :todo/projects-page [:map]
    :todo/project-page [:map [:project-id :uuid]]
    :todo/review-page [:map]
@@ -904,6 +905,17 @@
         tasks (vec (tasks-for-bucket ctx bucket))]
     {:query/result {:bucket bucket :tasks tasks :projects (vec (active-projects ctx))}
      :datastar/hiccup (ui/tasks-page {:bucket bucket :tasks tasks :projects (vec (active-projects ctx))})}))
+
+(defquery :todo task-page
+  {:authorized? (constantly true)
+   :datastar/path "/task"
+   :datastar/title "Task"
+   :grain/read-models {:todo/tasks 1 :todo/projects 1}}
+  [{{:keys [task-id]} :query :as ctx}]
+  (let [task (get (all-tasks ctx) task-id)
+        projects (vec (active-projects ctx))]
+    {:query/result {:task task :projects projects}
+     :datastar/hiccup (ui/task-page {:task task :projects projects})}))
 
 (defquery :todo projects-page
   {:authorized? (constantly true)

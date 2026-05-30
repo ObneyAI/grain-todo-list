@@ -8,6 +8,7 @@
             [cjbarre.grain-todo-list :as app]
             [cjbarre.grain-todo-list.ui :as ui]
             [cjbarre.grain-todo-list.ui.components :as c]
+            [clojure.string :as string]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [cognitect.anomalies :as anom]
             [malli.core :as m])
@@ -246,6 +247,16 @@
         (let [result (run-query ctx :todo/tasks-page {:bucket :inbox})]
           (is (= :inbox (:bucket (:query/result result))))
           (is (= [task-id] (map :task-id (:tasks (:query/result result)))))))
+      (testing "task page query renders dedicated task editing surface"
+        (let [result (run-query ctx :todo/task-page {:task-id task-id})
+              leaves (tree-seq coll? seq (:datastar/hiccup result))]
+          (is (= "Render me" (get-in result [:query/result :task :title])))
+          (is (some #(= "Rename" %) leaves))
+          (is (some #(= "Status" %) leaves))
+          (is (some #(= "Move" %) leaves))
+          (is (some #(= "Project" %) leaves))
+          (is (some #(= "Schedule" %) leaves))
+          (is (not (some #(= "Edit details" %) leaves)))))
       (testing "project page query includes task counts from projections"
         (process! ctx :todo/create-project {:project-id project-id :name "Counted project"})
         (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
@@ -367,9 +378,45 @@
 
   (testing "dev gallery renders canonical fixtures without command post actions"
     (let [hiccup (ui/dev-gallery-page)
-          leaves (tree-seq coll? seq hiccup)]
+          leaves (tree-seq coll? seq hiccup)
+          attrs (filter map? leaves)]
       (is (= :div#app (first hiccup)))
       (is (some #(= "Dev UI Gallery" %) leaves))
+      (is (some #(= "Vista Aero Minimal" %) leaves))
+      (is (not (some #(= "Aero Glass Console" %) leaves)))
+      (is (not (some #(= "Windows 7 Productivity" %) leaves)))
       (is (some #(= "Draft inbox capture conventions" %) leaves))
       (is (some #(= "Launch reference workflow" %) leaves))
-      (is (not (some #(= "@post('/actions');" %) leaves))))))
+      (is (some #(= "Forms and Alerts" %) leaves))
+      (is (some #(= "Unable to save changes." %) leaves))
+      (is (some #(= "Task Detail and Editing" %) leaves))
+      (is (some #(= "Rename" %) leaves))
+      (is (some #(= "Schedule" %) leaves))
+      (is (some #(= "Task action states" %) leaves))
+      (is (some #(= "Project action states" %) leaves))
+      (is (some #(= "Edit project" %) leaves))
+      (is (some #(= "No active projects." %) leaves))
+      (is (some #(= "No active projects to review." %) leaves))
+      (is (not (some #(= "data-uidotsh-pick" %) leaves)))
+      (is (not (some (fn [[k _]]
+                       (and (keyword? k)
+                            (or (= "data-on" (namespace k))
+                                (string/starts-with? (name k) "data-on"))))
+                     (mapcat seq attrs))))
+      (is (not (some #(and (string? %) (string/includes? % "@post('/actions')")) leaves)))))
+
+  (testing "cards stay minimal and task page owns the edit UI"
+    (let [task {:task-id task-id
+                :title "Minimal card"
+                :bucket :next
+                :status :active
+                :order 1000}
+          card-leaves (tree-seq coll? seq (c/task-card task []))
+          page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))]
+      (is (some #(= "Minimal card" %) card-leaves))
+      (is (some #(= "Open" %) card-leaves))
+      (is (not (some #(= "Edit details" %) card-leaves)))
+      (is (some #(= "Status" %) page-leaves))
+      (is (some #(= "Move" %) page-leaves))
+      (is (some #(= "Schedule" %) page-leaves))
+      (is (not (some #(= "Edit details" %) page-leaves))))))

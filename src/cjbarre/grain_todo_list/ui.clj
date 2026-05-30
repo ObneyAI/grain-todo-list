@@ -3,14 +3,15 @@
 
 (defn shell [{:keys [title]} & body]
   [:div#app
-   [:main {:class "min-h-screen bg-base-100 text-base-content"}
+   [:main {:class "gallery-page min-h-screen bg-base-100 text-base-content"}
     [:div {:class "mx-auto max-w-6xl px-4 py-8"}
-     [:header {:class "mb-8 flex flex-col gap-2 border-b border-base-300 pb-6"}
-      [:p {:class "text-sm font-medium uppercase tracking-wide text-primary"} "Grain Todo"]
-      [:h1 {:class "text-3xl font-semibold leading-tight"} title]
-      [:p {:class "max-w-2xl text-sm text-base-content/70"}
-       "A personal GTD workspace backed by Grain events and Datastar updates."]]
-     body]]])
+     [:div {:class "app-vista rounded-[1.25rem] border border-white/60 p-4 shadow-xl sm:p-6"}
+      [:header {:class "mb-8 flex flex-col gap-2 border-b border-base-300 pb-6"}
+       [:p {:class "text-sm font-medium uppercase text-primary"} "Grain Todo"]
+       [:h1 {:class "text-3xl font-semibold leading-tight"} title]
+       [:p {:class "max-w-2xl text-sm text-base-content/70"}
+        "A personal GTD workspace backed by Grain events and Datastar updates."]]
+      body]]]])
 
 (defn home-page [{:keys [buckets deferred due-soon inactive projects review]}]
   (shell {:title "GTD Workspace"}
@@ -43,6 +44,13 @@
          (c/action-error)
          [:div {:class "mb-6"} (c/quick-add {:bucket bucket})]
          (c/task-list tasks "No tasks in this bucket." projects)))
+
+(defn task-page [{:keys [task projects]}]
+  (shell {:title (or (:title task) "Task")}
+         (c/action-error)
+         (if task
+           (c/task-detail-panel task projects)
+           [:div {:class "alert alert-warning"} "Task not found."])))
 
 (defn projects-page [{:keys [projects]}]
   (shell {:title "Projects"}
