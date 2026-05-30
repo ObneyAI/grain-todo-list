@@ -37,7 +37,7 @@
                                       "A weekly review is active."
                                       "No active weekly review.")
                             :class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"
-                            :action [:a {:class "btn btn-outline btn-sm" :href "/review"} "Open review"]})]]))
+                            :action (c/value-chip {:label "open review" :href "/review"})})]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
   (shell {:title (str (get c/bucket-labels bucket "Tasks") " Tasks")}
@@ -65,12 +65,12 @@
            [:div {:class "space-y-6"}
             [:section {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
              [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
-              [:div {:class "space-y-2"}
-               [:p {:class "text-sm text-base-content/70"} (str "Status: " (clojure.core/name (:status project)))]
+              [:div {:class "min-w-0 space-y-2"}
+               (c/project-editor project)
                (c/task-count-row (:task-counts project))]
               (c/project-actions project)]
-             [:div {:class "mt-4"}
-              (c/project-editor project)]]
+             [:p {:class "mt-4 text-sm text-base-content/70"}
+              (str "Status: " (clojure.core/name (:status project)))]]
             (when (= :active (:status project))
               (c/quick-add {:bucket :next :project-id (:project-id project)}))
             (c/task-list tasks "No active tasks for this project." projects)]

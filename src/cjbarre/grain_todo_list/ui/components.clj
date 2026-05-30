@@ -51,6 +51,89 @@
   [signal-name]
   (str "new Date(" (signal-ref signal-name) " + 'T00:00:00').toISOString()"))
 
+(defn command-expr
+  [command assignments]
+  (string/join
+   " "
+   (concat [(str (ds-assign "command/name" (ds-str command)) ";")]
+           assignments
+           ["@post('/actions');"])))
+
+(defn commit-text-expr
+  [command id-key id-value value-key signal-name original-value]
+  (let [signal (signal-ref signal-name)]
+    (str "let next = " signal ".trim(); "
+         "if (next && next !== " (ds-str original-value) ") { "
+         (command-expr command
+                       [(str (ds-assign (name id-key) (ds-str id-value)) ";")
+                        (str (ds-assign (name value-key) "next") ";")])
+         " }")))
+
+(defn reset-signal-expr
+  [signal-name value]
+  (str (ds-assign signal-name (ds-str value)) "; el.blur();"))
+
+(defn inline-text-edit
+  [{:keys [class command id-key id-value value-key signal-name value aria-label multiline?]}]
+  (let [tag (if multiline? :textarea :input)
+        attrs {:class (str "inline-edit " class)
+               :aria-label aria-label
+               :data-bind signal-name
+               :data-on:blur (commit-text-expr command id-key id-value value-key signal-name value)
+               :data-on:keydown (str "if (evt.key === 'Enter') { evt.preventDefault(); el.blur(); } "
+                                     "if (evt.key === 'Escape') { evt.preventDefault(); "
+                                     (reset-signal-expr signal-name value) " }")
+               :required true}]
+    [tag (if multiline? attrs (assoc attrs :type "text"))]))
+
+(defn value-chip
+  [{:keys [label active? disabled? danger? href on-click]}]
+  (let [class (str "value-chip"
+                   (when active? " value-chip-active")
+                   (when danger? " value-chip-danger"))]
+    (if href
+      [:a {:class class :href href} label]
+      [:button {:class class
+                :type "button"
+                :disabled disabled?
+                :data-on:click on-click}
+       label])))
+
+(defn value-chip-row
+  [& chips]
+  (into [:div {:class "value-chip-row"}]
+        (remove nil? chips)))
+
+(defn option-select
+  [{:keys [class signal-name aria-label disabled? on-change]} & options]
+  (into [:select {:class (str "inline-select " class)
+                  :aria-label aria-label
+                  :data-bind signal-name
+                  :data-on:change on-change
+                  :disabled disabled?}]
+        options))
+
+(defn inline-date-edit
+  [{:keys [label signal-name value command clear-command id-value value-key]}]
+  [:label {:class "inline-date"}
+   [:span label]
+   [:input {:class "inline-date-input"
+            :aria-label label
+            :type "date"
+            :data-bind signal-name
+            :data-on:change
+            (str "if (" (signal-ref signal-name) ") { "
+                 (command-expr command
+                               [(str (ds-assign "task-id" (ds-str id-value)) ";")
+                                (str (ds-assign (name value-key) (offset-from-date-expr signal-name)) ";")])
+                 " } else "
+                 (if value
+                   (str "{ "
+                        (command-expr clear-command
+                                      [(str (ds-assign "task-id" (ds-str id-value)) ";")])
+                        " }")
+                   "{}"))}]])
+
 (defn action-error []
   [:div {:data-show "$error" :class "alert alert-error mb-4"}
    [:span {:data-text "$error"}]])
@@ -66,7 +149,7 @@
    (for [{:keys [key label class]} badges
          :when label]
      [:span {:key (or key label)
-             :class (str "badge badge-sm " (or class "badge-outline"))}
+             :class (str "badge badge-sm whitespace-nowrap " (or class "badge-outline"))}
       label])])
 
 (defn page-section
@@ -109,59 +192,47 @@
    [:button {:class "btn btn-outline" :type "submit"} "Create project"]])
 
 (defn task-actions [{:keys [task-id status]}]
-  [:div {:class "flex flex-wrap gap-2"}
+  (value-chip-row
+   (value-chip {:label (name status) :active? true :disabled? true})
    (when (= :active status)
-     [:button {:class "btn btn-xs btn-success"
-               :type "button"
-               :data-on:click (command-click "todo/complete-task" {:task-id task-id})}
-      "Done"])
+     (value-chip {:label "done"
+                  :on-click (command-click "todo/complete-task" {:task-id task-id})}))
    (when (= :completed status)
-     [:button {:class "btn btn-xs btn-outline"
-               :type "button"
-               :data-on:click (command-click "todo/archive-task" {:task-id task-id})}
-      "Archive"])
+     (value-chip {:label "archived"
+                  :on-click (command-click "todo/archive-task" {:task-id task-id})}))
    (when (#{:completed :canceled} status)
-     [:button {:class "btn btn-xs btn-outline"
-               :type "button"
-               :data-on:click (command-click "todo/reactivate-task" {:task-id task-id})}
-      "Reactivate"])
+     (value-chip {:label "active"
+                  :on-click (command-click "todo/reactivate-task" {:task-id task-id})}))
    (when (not= :archived status)
-     [:button {:class "btn btn-xs btn-ghost text-error"
-               :type "button"
-               :data-on:click (command-click "todo/cancel-task" {:task-id task-id})}
-      "Cancel"])])
+     (value-chip {:label "canceled"
+                  :danger? true
+                  :on-click (command-click "todo/cancel-task" {:task-id task-id})}))))
 
 (defn bucket-move-controls [{:keys [task-id bucket]}]
-  [:div {:class "flex flex-wrap gap-1"}
-   (for [[value label] bucket-labels
-         :when (not= value bucket)]
-     [:button {:key value
-               :class "btn btn-xs btn-ghost"
-               :type "button"
-               :data-on:click (command-click "todo/move-task-to-bucket"
-                                             {:task-id task-id :bucket (name value)})}
-      label])])
+  (into (value-chip-row)
+        (for [[value label] bucket-labels]
+          (value-chip {:label label
+                       :active? (= value bucket)
+                       :disabled? (= value bucket)
+                       :on-click (command-click "todo/move-task-to-bucket"
+                                               {:task-id task-id :bucket (name value)})}))))
 
 (defn task-project-name
   [{:keys [project-id]} projects]
   (some #(when (= project-id (:project-id %)) (:name %)) projects))
 
-(defn task-rename-form [{:keys [task-id title]}]
+(defn task-title-edit [{:keys [task-id title]}]
   (let [suffix (signal-suffix task-id)
         title-signal (str "title_" suffix)]
-    [:form {:class "grid gap-2 sm:grid-cols-[1fr_auto]"
-            :data-signals (signal-map [[title-signal title]])
-            :data-on:submit__prevent
-            (str (ds-assign "command/name" (ds-str "todo/rename-task")) "; "
-                 (ds-assign "task-id" (ds-str task-id)) "; "
-                 (ds-assign "title" (signal-ref title-signal)) "; "
-                 "@post('/actions')")}
-     [:input {:class "input input-bordered input-sm min-w-0 max-sm:text-base"
-              :aria-label "Task title"
-              :name "title"
-              :data-bind title-signal
-              :required true}]
-     [:button {:class "btn btn-sm btn-outline" :type "submit"} "Rename"]]))
+    [:div {:data-signals (signal-map [[title-signal title]])}
+     (inline-text-edit {:class "inline-edit-title"
+                        :command "todo/rename-task"
+                        :id-key :task-id
+                        :id-value task-id
+                        :value-key :title
+                        :signal-name title-signal
+                        :value title
+                        :aria-label "Task title"})]))
 
 (defn task-sidebar-section
   [title & body]
@@ -172,37 +243,32 @@
 (defn task-project-panel [{:keys [task-id project-id status] :as task} projects]
   (let [suffix (signal-suffix task-id)
         project-signal (str "project_" suffix)
-        project-options (remove #(= project-id (:project-id %)) projects)]
+        current-project-id (str (or project-id ""))
+        on-change (str "if (" (signal-ref project-signal) ") { "
+                       (command-expr "todo/assign-task-to-project"
+                                     [(str (ds-assign "task-id" (ds-str task-id)) ";")
+                                      (str (ds-assign "project-id" (signal-ref project-signal)) ";")])
+                       " } else "
+                       (if project-id
+                         (str "{ "
+                              (command-expr "todo/remove-task-from-project"
+                                            [(str (ds-assign "task-id" (ds-str task-id)) ";")])
+                              " }")
+                         "{}"))]
     (task-sidebar-section
      "Project"
-     [:div {:class "space-y-2 text-sm text-base-content/70"}
-      [:p (or (task-project-name task projects) "No project assigned.")]]
      (when (= :active status)
-       [:form {:class "grid gap-2"
-               :data-signals (signal-map [[project-signal ""]])
-               :data-on:submit__prevent
-               (str "if (" (signal-ref project-signal) ") { "
-                    (ds-assign "command/name" (ds-str "todo/assign-task-to-project")) "; "
-                    (ds-assign "task-id" (ds-str task-id)) "; "
-                    (ds-assign "project-id" (signal-ref project-signal)) "; "
-                    "@post('/actions'); }")}
-        [:select {:class "select select-bordered select-sm min-w-0 max-sm:text-base"
-                  :aria-label "Assign project"
-                  :name "project-id"
-                  :data-bind project-signal
-                  :disabled (empty? project-options)}
-         [:option {:value ""} (if (seq project-options) "Assign project" "No projects")]
-         (for [{:keys [project-id name]} project-options]
-           [:option {:key project-id :value project-id} name])]
-        [:button {:class "btn btn-sm btn-outline"
-                  :type "submit"
-                  :disabled (empty? project-options)}
-         "Assign"]])
-     (when project-id
-       [:button {:class "btn btn-xs btn-ghost"
-                 :type "button"
-                 :data-on:click (command-click "todo/remove-task-from-project" {:task-id task-id})}
-        "Remove project"]))))
+       [:div {:data-signals (signal-map [[project-signal current-project-id]])}
+        (apply option-select
+               {:signal-name project-signal
+                :aria-label "Project"
+                :disabled? (empty? projects)
+                :on-change on-change}
+               (concat [[:option {:value ""} "No project"]]
+                       (for [{:keys [project-id name]} projects]
+                         [:option {:key project-id :value project-id} name])))])
+     (when (not= :active status)
+       [:p {:class "text-sm text-base-content/70"} (or (task-project-name task projects) "No project")]))))
 
 (defn task-schedule-panel [{:keys [task-id due-at defer-until status]}]
   (let [suffix (signal-suffix task-id)
@@ -210,54 +276,32 @@
         defer-signal (str "defer_" suffix)]
     (task-sidebar-section
      "Schedule"
-     [:div {:class "grid grid-cols-2 gap-3 text-sm"}
-      [:div
-       [:p {:class "text-xs font-medium text-base-content/60"} "Due"]
-       [:p {:class "mt-1"} (or (date-value due-at) "None")]]
-      [:div
-       [:p {:class "text-xs font-medium text-base-content/60"} "Deferred"]
-       [:p {:class "mt-1"} (or (date-value defer-until) "None")]]]
      (when (= :active status)
-       [:div {:class "grid gap-3"}
-        [:form {:class "grid gap-2"
-                :data-signals (signal-map [[due-signal (date-value due-at)]])
-                :data-on:submit__prevent
-                (str "if (" (signal-ref due-signal) ") { "
-                     (ds-assign "command/name" (ds-str "todo/set-task-due-at")) "; "
-                     (ds-assign "task-id" (ds-str task-id)) "; "
-                     (ds-assign "due-at" (offset-from-date-expr due-signal)) "; "
-                     "@post('/actions'); }")}
-         [:input {:class "input input-bordered input-sm min-w-0 max-sm:text-base"
-                  :aria-label "Due date"
-                  :name "due-at"
-                  :type "date"
-                  :data-bind due-signal}]
-         [:button {:class "btn btn-sm btn-outline" :type "submit"} "Set due"]]
-        [:form {:class "grid gap-2"
-                :data-signals (signal-map [[defer-signal (date-value defer-until)]])
-                :data-on:submit__prevent
-                (str "if (" (signal-ref defer-signal) ") { "
-                     (ds-assign "command/name" (ds-str "todo/defer-task")) "; "
-                     (ds-assign "task-id" (ds-str task-id)) "; "
-                     (ds-assign "defer-until" (offset-from-date-expr defer-signal)) "; "
-                     "@post('/actions'); }")}
-         [:input {:class "input input-bordered input-sm min-w-0 max-sm:text-base"
-                  :aria-label "Defer until"
-                  :name "defer-until"
-                  :type "date"
-                  :data-bind defer-signal}]
-         [:button {:class "btn btn-sm btn-outline" :type "submit"} "Defer"]]])
-     [:div {:class "flex flex-wrap gap-2"}
-      (when due-at
-        [:button {:class "btn btn-xs btn-ghost"
-                  :type "button"
-                  :data-on:click (command-click "todo/clear-task-due-at" {:task-id task-id})}
-         "Clear due"])
-      (when defer-until
-        [:button {:class "btn btn-xs btn-ghost"
-                  :type "button"
-                  :data-on:click (command-click "todo/clear-task-defer-date" {:task-id task-id})}
-         "Clear defer"])])))
+       [:div {:class "grid gap-3"
+              :data-signals (signal-map [[due-signal (date-value due-at)]
+                                         [defer-signal (date-value defer-until)]])}
+        (inline-date-edit {:label "Due"
+                           :signal-name due-signal
+                           :value (date-value due-at)
+                           :command "todo/set-task-due-at"
+                           :clear-command "todo/clear-task-due-at"
+                           :id-value task-id
+                           :value-key :due-at})
+        (inline-date-edit {:label "Defer"
+                           :signal-name defer-signal
+                           :value (date-value defer-until)
+                           :command "todo/defer-task"
+                           :clear-command "todo/clear-task-defer-date"
+                           :id-value task-id
+                           :value-key :defer-until})])
+     (when (not= :active status)
+       [:div {:class "grid grid-cols-2 gap-3 text-sm"}
+        [:div
+         [:p {:class "text-xs font-medium text-base-content/60"} "Due"]
+         [:p {:class "mt-1"} (or (date-value due-at) "None")]]
+        [:div
+         [:p {:class "text-xs font-medium text-base-content/60"} "Deferred"]
+         [:p {:class "mt-1"} (or (date-value defer-until) "None")]]]))))
 
 (defn task-badges
   [{:keys [bucket due-at defer-until project-id status] :as task} projects]
@@ -269,19 +313,16 @@
 
 (defn task-open-link
   [{:keys [task-id]}]
-  [:a {:class "btn btn-xs btn-outline" :href (str "/task?task-id=" task-id)} "Open"])
+  (value-chip {:label "open" :href (str "/task?task-id=" task-id)}))
 
 (defn task-primary-action [{:keys [task-id status] :as task}]
   (case status
-    :active [:button {:class "btn btn-xs btn-primary"
-                      :data-on:click (command-click "todo/complete-task" {:task-id task-id})}
-             "Done"]
-    :completed [:button {:class "btn btn-xs btn-outline"
-                         :data-on:click (command-click "todo/archive-task" {:task-id task-id})}
-                "Archive"]
-    :canceled [:button {:class "btn btn-xs btn-outline"
-                        :data-on:click (command-click "todo/reactivate-task" {:task-id task-id})}
-               "Reactivate"]
+    :active (value-chip {:label "done"
+                         :on-click (command-click "todo/complete-task" {:task-id task-id})})
+    :completed (value-chip {:label "archive"
+                            :on-click (command-click "todo/archive-task" {:task-id task-id})})
+    :canceled (value-chip {:label "active"
+                           :on-click (command-click "todo/reactivate-task" {:task-id task-id})})
     (task-open-link task)))
 
 (defn task-summary-row
@@ -293,7 +334,7 @@
      [:h3 {:class "truncate text-sm font-medium"} title]
      (badge-row (task-badges task projects))]
     (when due-at
-      [:span {:class "badge badge-warning"} (date-value due-at)])]))
+      [:span {:class "badge badge-warning whitespace-nowrap"} (date-value due-at)])]))
 
 (defn task-card
   ([task] (task-card task []))
@@ -336,37 +377,31 @@
     (empty-state empty-message)))
 
 (defn project-actions [{:keys [project-id status]}]
-  [:div {:class "flex flex-wrap gap-2"}
-   [:a {:class "btn btn-xs btn-outline" :href (str "/project?project-id=" project-id)} "Open"]
+  (value-chip-row
+   (value-chip {:label "open" :href (str "/project?project-id=" project-id)})
+   (value-chip {:label (name status) :active? true :disabled? true})
    (when (= :active status)
-     [:button {:class "btn btn-xs btn-success"
-               :data-on:click (command-click "todo/complete-project" {:project-id project-id})}
-      "Complete"])
+     (value-chip {:label "completed"
+                  :on-click (command-click "todo/complete-project" {:project-id project-id})}))
    (when (= :active status)
-     [:button {:class "btn btn-xs btn-ghost text-error"
-               :data-on:click (command-click "todo/cancel-project" {:project-id project-id})}
-      "Cancel"])
+     (value-chip {:label "canceled"
+                  :danger? true
+                  :on-click (command-click "todo/cancel-project" {:project-id project-id})}))
    (when (#{:completed :canceled} status)
-     [:button {:class "btn btn-xs btn-outline"
-               :data-on:click (command-click "todo/reactivate-project" {:project-id project-id})}
-      "Reactivate"])])
+     (value-chip {:label "active"
+                  :on-click (command-click "todo/reactivate-project" {:project-id project-id})}))))
 
 (defn project-editor [{:keys [project-id name]}]
   (let [name-signal (str "project_name_" (signal-suffix project-id))]
-    [:details {:class "rounded border border-base-300 bg-base-200/30 px-3 py-2"
-               :data-signals (signal-map [[name-signal name]])}
-     [:summary {:class "cursor-pointer select-none text-sm font-medium text-base-content/70"} "Edit project"]
-     [:form {:class "mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"
-             :data-on:submit__prevent
-             (str (ds-assign "command/name" (ds-str "todo/rename-project")) "; "
-                  (ds-assign "project-id" (ds-str project-id)) "; "
-                  (ds-assign "name" (signal-ref name-signal)) "; "
-                  "@post('/actions')")}
-      [:input {:class "input input-bordered input-sm min-w-0"
-               :aria-label "Project name"
-               :data-bind name-signal
-               :required true}]
-      [:button {:class "btn btn-sm btn-outline" :type "submit"} "Rename"]]]))
+    [:div {:data-signals (signal-map [[name-signal name]])}
+     (inline-text-edit {:class "inline-edit-heading"
+                        :command "todo/rename-project"
+                        :id-key :project-id
+                        :id-value project-id
+                        :value-key :name
+                        :signal-name name-signal
+                        :value name
+                        :aria-label "Project name"})]))
 
 (defn task-count-row [task-counts]
   (let [{:keys [active completed canceled archived]} (merge {:active 0 :completed 0 :canceled 0 :archived 0}
@@ -393,7 +428,7 @@
      [:h3 {:class "font-medium"} name]
      [:p {:class "text-sm text-base-content/60"} (clojure.core/name status)]
      (task-count-row task-counts)]
-    [:a {:class "btn btn-xs btn-outline" :href (str "/project?project-id=" project-id)} "Open"]]])
+    (value-chip {:label "open" :href (str "/project?project-id=" project-id)})]])
 
 (defn task-detail-panel [task projects]
   [:div {:class "grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"}
@@ -403,7 +438,7 @@
       [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
        [:div {:class "min-w-0 space-y-2"}
         [:p {:class "text-sm font-medium text-base-content/60"} "Task"]
-        [:h2 {:class "text-xl font-semibold"} (:title task)]]
+        (task-title-edit task)]
        [:span {:class "badge badge-outline"} (clojure.core/name (:status task))]]
       (badge-row (task-badges task projects))]
      [:div {:class "grid gap-4 border-t border-base-content/10 pt-4 md:grid-cols-3"}
@@ -420,19 +455,17 @@
             (when (:defer-until task) (str "Deferred " (date-value (:defer-until task))))
             "None")]]]
      [:div {:class "border-t border-base-content/10 pt-4"}
-      [:h3 {:class "mb-3 text-sm font-semibold"} "Rename"]
-      (task-rename-form task)]]]
+      [:h3 {:class "mb-3 text-sm font-semibold"} "Bucket"]
+      (when (= :active (:status task))
+        (bucket-move-controls task))
+      (when (not= :active (:status task))
+        [:p {:class "text-sm text-base-content/70"}
+         (get bucket-labels (:bucket task) (some-> task :bucket name))])]]]
    [:aside {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
     [:div {:class "space-y-4"}
      (task-sidebar-section
       "Status"
-      [:p {:class "text-sm text-base-content/70"} (str "Current status: " (clojure.core/name (:status task)))]
       (task-actions task))
-     (when (= :active (:status task))
-       (task-sidebar-section
-        "Move"
-        [:p {:class "text-sm text-base-content/70"} "Move this task to another bucket."]
-        (bucket-move-controls task)))
      (task-project-panel task projects)
      (task-schedule-panel task)]]])
 
@@ -451,24 +484,24 @@
     (empty-state empty-message)))
 
 (defn review-bucket-action [review bucket reviewed?]
-  [:button {:class (str "btn btn-sm " (if reviewed? "btn-success" "btn-outline"))
-            :disabled reviewed?
-            :data-on:click (command-click "todo/mark-bucket-reviewed"
-                                          {:review-id (:review-id review)
-                                           :bucket (name bucket)})}
-   (if reviewed? "Reviewed" "Mark reviewed")])
+  (value-chip {:label (if reviewed? "reviewed" "review")
+               :active? reviewed?
+               :disabled? reviewed?
+               :on-click (command-click "todo/mark-bucket-reviewed"
+                                        {:review-id (:review-id review)
+                                         :bucket (name bucket)})}))
 
 (defn review-project-row [review reviewed-project-ids project]
   (let [reviewed? (contains? reviewed-project-ids (:project-id project))]
     [:div {:key (:project-id project)
            :class "grid gap-2 p-3 lg:grid-cols-[1fr_auto] lg:items-center"}
      (project-summary-row project)
-     [:button {:class (str "btn btn-sm " (if reviewed? "btn-success" "btn-outline"))
-               :disabled reviewed?
-               :data-on:click (command-click "todo/mark-project-reviewed"
-                                             {:review-id (:review-id review)
-                                              :project-id (:project-id project)})}
-      (if reviewed? "Reviewed" "Mark reviewed")]]))
+     (value-chip {:label (if reviewed? "reviewed" "review")
+                  :active? reviewed?
+                  :disabled? reviewed?
+                  :on-click (command-click "todo/mark-project-reviewed"
+                                          {:review-id (:review-id review)
+                                           :project-id (:project-id project)})})]))
 
 (defn review-project-list [review reviewed-project-ids projects]
   (if (seq projects)

@@ -249,11 +249,15 @@
           (is (= [task-id] (map :task-id (:tasks (:query/result result)))))))
       (testing "task page query renders dedicated task editing surface"
         (let [result (run-query ctx :todo/task-page {:task-id task-id})
-              leaves (tree-seq coll? seq (:datastar/hiccup result))]
+              leaves (tree-seq coll? seq (:datastar/hiccup result))
+              attrs (filter map? leaves)]
           (is (= "Render me" (get-in result [:query/result :task :title])))
-          (is (some #(= "Rename" %) leaves))
+          (is (not (some #(= "Rename" %) leaves)))
+          (is (some #(contains? % :data-on:blur) attrs))
+          (is (some #(contains? % :data-on:keydown) attrs))
+          (is (some #(contains? % :data-on:change) attrs))
           (is (some #(= "Status" %) leaves))
-          (is (some #(= "Move" %) leaves))
+          (is (some #(= "Bucket" %) leaves))
           (is (some #(= "Project" %) leaves))
           (is (some #(= "Schedule" %) leaves))
           (is (not (some #(= "Edit details" %) leaves)))))
@@ -390,11 +394,12 @@
       (is (some #(= "Forms and Alerts" %) leaves))
       (is (some #(= "Unable to save changes." %) leaves))
       (is (some #(= "Task Detail and Editing" %) leaves))
-      (is (some #(= "Rename" %) leaves))
+      (is (not (some #(= "Rename" %) leaves)))
       (is (some #(= "Schedule" %) leaves))
       (is (some #(= "Task action states" %) leaves))
       (is (some #(= "Project action states" %) leaves))
-      (is (some #(= "Edit project" %) leaves))
+      (is (not (some #(= "Edit project" %) leaves)))
+      (is (some #(contains? % :data-bind) attrs))
       (is (some #(= "No active projects." %) leaves))
       (is (some #(= "No active projects to review." %) leaves))
       (is (not (some #(= "data-uidotsh-pick" %) leaves)))
@@ -412,11 +417,15 @@
                 :status :active
                 :order 1000}
           card-leaves (tree-seq coll? seq (c/task-card task []))
-          page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))]
+          page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
+          page-attrs (filter map? page-leaves)]
       (is (some #(= "Minimal card" %) card-leaves))
-      (is (some #(= "Open" %) card-leaves))
+      (is (some #(= "open" %) card-leaves))
       (is (not (some #(= "Edit details" %) card-leaves)))
       (is (some #(= "Status" %) page-leaves))
-      (is (some #(= "Move" %) page-leaves))
+      (is (some #(= "Bucket" %) page-leaves))
       (is (some #(= "Schedule" %) page-leaves))
+      (is (some #(contains? % :data-on:blur) page-attrs))
+      (is (some #(contains? % :data-on:change) page-attrs))
+      (is (some #(contains? % :data-on:keydown) page-attrs))
       (is (not (some #(= "Edit details" %) page-leaves))))))
