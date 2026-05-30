@@ -157,6 +157,38 @@
                  on-click (assoc :data-on:click on-click))
        label])))
 
+(defn check-action
+  [{:keys [aria-label on-click]}]
+  [:button (cond-> {:class "check-action"
+                    :type "button"
+                    :aria-label (or aria-label "Complete task")
+                    :title (or aria-label "Complete task")}
+             on-click (assoc :data-on:click on-click))
+   [:span {:class "check-action-mark" :aria-hidden "true"}]])
+
+(defn status-action
+  [{:keys [label mark danger? on-click]}]
+  [:button (cond-> {:class (str "status-action" (when danger? " status-action-danger"))
+                    :type "button"
+                    :aria-label label}
+             on-click (assoc :data-on:click on-click))
+   [:span {:class "status-action-circle" :aria-hidden "true"}
+    [:span {:class (str "status-action-mark status-action-mark-" (name mark))}]]
+   [:span label]])
+
+(defn complete-action
+  [{:keys [on-click]}]
+  (status-action {:label "Complete task"
+                  :mark :check
+                  :on-click on-click}))
+
+(defn cancel-action
+  [{:keys [on-click]}]
+  (status-action {:label "Cancel task"
+                  :mark :cancel
+                  :danger? true
+                  :on-click on-click}))
+
 (defn chip-row
   [& chips]
   (into [:div {:class "value-chip-row"}]
@@ -275,21 +307,20 @@
    (action-button {:label "Create project" :class "btn-outline" :type "submit"})])
 
 (defn task-actions [{:keys [task-id status]}]
-  (chip-row
-   (chip {:label (name status) :active? true :disabled? true})
+  [:div {:class "grid gap-3"}
    (when (= :active status)
-     (chip {:label "done"
-            :on-click (command-click "todo/complete-task" {:task-id task-id})}))
-   (when (= :completed status)
-     (chip {:label "archived"
-            :on-click (command-click "todo/archive-task" {:task-id task-id})}))
-   (when (#{:completed :canceled} status)
-     (chip {:label "active"
-            :on-click (command-click "todo/reactivate-task" {:task-id task-id})}))
-   (when (not= :archived status)
-     (chip {:label "canceled"
-            :danger? true
-            :on-click (command-click "todo/cancel-task" {:task-id task-id})}))))
+     [:div {:class "grid gap-3"}
+      (complete-action {:on-click (command-click "todo/complete-task" {:task-id task-id})})
+      (cancel-action {:on-click (command-click "todo/cancel-task" {:task-id task-id})})])
+   (when (not= :active status)
+     (chip-row
+      (chip {:label (name status) :active? true :disabled? true})
+      (when (= :completed status)
+        (chip {:label "Archive task"
+               :on-click (command-click "todo/archive-task" {:task-id task-id})}))
+      (when (#{:completed :canceled} status)
+        (chip {:label "Reactivate"
+               :on-click (command-click "todo/reactivate-task" {:task-id task-id})}))))])
 
 (defn bucket-move-controls [{:keys [task-id bucket]}]
   (into (chip-row)
@@ -389,7 +420,7 @@
 (defn task-badges
   [{:keys [bucket project-id status] :as task} projects]
   [{:key :bucket :label (when bucket (get bucket-labels bucket (name bucket)))}
-   {:key :status :label (when status (name status))}
+   {:key :status :label (when (and status (not= :active status)) (name status))}
    {:key :project :label (when project-id (or (task-project-name task projects) "Project")) :class "status-token-blue"}])
 
 (defn task-schedule-badges
@@ -410,8 +441,7 @@
 
 (defn task-primary-action [{:keys [task-id status]}]
   (case status
-    :active (chip {:label "done"
-                   :on-click (command-click "todo/complete-task" {:task-id task-id})})
+    :active (check-action {:on-click (command-click "todo/complete-task" {:task-id task-id})})
     :completed (chip {:label "archive"
                       :on-click (command-click "todo/archive-task" {:task-id task-id})})
     :canceled (chip {:label "active"
@@ -434,7 +464,7 @@
   ([task] (task-card task []))
   ([{:keys [title] :as task} projects]
    (surface {:tag :article :variant :compact-card}
-            [:div {:class "grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"}
+            [:div {:class "grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"}
              [:a {:class clickable-content-class
                   :href (task-href task)}
               [:h3 {:class "truncate font-medium"} title]
@@ -576,7 +606,8 @@
                [:div {:class "min-w-0 space-y-2"}
                 [:p {:class "text-sm font-medium text-base-content/60"} "Task"]
                 (task-title-edit task)]
-               (badge {:label (clojure.core/name (:status task))})]
+               (when (not= :active (:status task))
+                 (badge {:label (clojure.core/name (:status task))}))]
               (badge-row (task-badges task projects))]
              [:div {:class "grid gap-4 border-t border-base-content/10 pt-4 md:grid-cols-3"}
               [:div

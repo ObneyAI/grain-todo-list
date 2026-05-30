@@ -296,6 +296,143 @@
       rgb(248 252 255 / 0.72);
   }
 
+  .check-action {
+    position: relative;
+    display: inline-flex;
+    width: 1.65rem;
+    height: 1.65rem;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid rgb(62 115 156 / 0.34);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.12);
+    box-shadow: inset 0 1px 1px rgb(31 82 124 / 0.08), inset 0 0 0 3px rgb(255 255 255 / 0.32), 0 1px 2px rgb(28 77 120 / 0.05);
+    cursor: pointer;
+    backdrop-filter: blur(8px) saturate(1.08);
+  }
+
+  .check-action::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 3rem);
+    height: max(100%, 3rem);
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+
+  .check-action:hover {
+    border-color: rgb(43 121 183 / 0.36);
+    background: rgb(255 255 255 / 0.2);
+    box-shadow: inset 0 1px 1px rgb(31 82 124 / 0.1), inset 0 0 0 3px rgb(255 255 255 / 0.42), 0 2px 5px rgb(28 77 120 / 0.08);
+  }
+
+  .check-action:focus-visible {
+    outline: 2px solid rgb(48 127 193 / 0.72);
+    outline-offset: 2px;
+  }
+
+  .check-action-mark {
+    width: 0.58rem;
+    height: 0.32rem;
+    border-bottom: 1.75px solid rgb(28 92 139);
+    border-left: 1.75px solid rgb(28 92 139);
+    opacity: 0;
+    transform: translateY(-0.03rem) rotate(-45deg);
+  }
+
+  .check-action:hover .check-action-mark,
+  .check-action:focus-visible .check-action-mark {
+    opacity: 1;
+  }
+
+  .status-action {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    gap: 0.55rem;
+    border: 0;
+    background: transparent;
+    color: rgb(31 57 82);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .status-action:hover {
+    color: rgb(22 83 130);
+  }
+
+  .status-action:focus-visible {
+    border-radius: 999px;
+    outline: 2px solid rgb(48 127 193 / 0.72);
+    outline-offset: 3px;
+  }
+
+  .status-action-danger {
+    color: rgb(112 55 55);
+  }
+
+  .status-action-danger:hover {
+    color: rgb(137 50 50);
+  }
+
+  .status-action-circle {
+    display: inline-flex;
+    position: relative;
+    width: 1.55rem;
+    height: 1.55rem;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid rgb(62 115 156 / 0.34);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.1);
+    box-shadow: inset 0 1px 1px rgb(31 82 124 / 0.08), inset 0 0 0 3px rgb(255 255 255 / 0.28), 0 1px 2px rgb(28 77 120 / 0.05);
+  }
+
+  .status-action-danger .status-action-circle {
+    border-color: rgb(161 87 87 / 0.34);
+    background: rgb(255 255 255 / 0.1);
+    box-shadow: inset 0 1px 1px rgb(111 55 55 / 0.07), inset 0 0 0 3px rgb(255 255 255 / 0.28), 0 1px 2px rgb(111 55 55 / 0.04);
+  }
+
+  .status-action-mark {
+    opacity: 0;
+  }
+
+  .status-action-mark-check {
+    width: 0.55rem;
+    height: 0.3rem;
+    border-bottom: 1.75px solid rgb(28 92 139);
+    border-left: 1.75px solid rgb(28 92 139);
+    transform: translateY(-0.03rem) rotate(-45deg);
+  }
+
+  .status-action-mark-cancel::before,
+  .status-action-mark-cancel::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.62rem;
+    height: 1.75px;
+    border-radius: 999px;
+    background: rgb(137 50 50);
+    content: "";
+  }
+
+  .status-action-mark-cancel::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+
+  .status-action-mark-cancel::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
+
+  .status-action:hover .status-action-mark,
+  .status-action:focus-visible .status-action-mark {
+    opacity: 1;
+  }
+
   .status-token-blue,
   .value-chip-active,
   .value-chip:disabled {
