@@ -1,22 +1,27 @@
 {:paths ["src" "resources"]
  :deps {obneyai/grain-core-v2
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "9ed2ab04f70f62b115ca237f77673f55cd3f672d"
+         :sha "5fef92a7db5907224982bbbdfff15bde947235b6"
          :deps/root "projects/grain-core-v2"}
 
         obneyai/grain-datastar
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "9ed2ab04f70f62b115ca237f77673f55cd3f672d"
+         :sha "5fef92a7db5907224982bbbdfff15bde947235b6"
          :deps/root "projects/grain-datastar"}
 
         obneyai/grain-event-store-sqlite-v3
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "9ed2ab04f70f62b115ca237f77673f55cd3f672d"
+         :sha "5fef92a7db5907224982bbbdfff15bde947235b6"
          :deps/root "projects/grain-event-store-sqlite-v3"}
 
         obneyai/orc {:git/url "https://github.com/ObneyAI/orc.git"
-                     :git/sha "7fbfb5464aeba1636fe4856041ee33696bd30dd5"
+                     :git/sha "83c315ad53449cb3e8ceba6a8b824291cf4378ae"
                      :deps/root "projects/orc"}
+
+        obneyai/grain-code-agent-tools
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :git/sha "5fef92a7db5907224982bbbdfff15bde947235b6"
+         :deps/root "projects/grain-code-agent-tools"}
 
         integrant/integrant {:mvn/version "1.0.1"}}
  :aliases

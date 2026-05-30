@@ -5,6 +5,7 @@
             [clojure.string :as string]
             [io.pedestal.http :as http]
             ;; Grain 
+            [ai.obney.grain.code-agent-tools.interface :as code-agent-tools]
             [ai.obney.grain.command-processor-v2.interface :as cp :refer [defcommand]]
             [ai.obney.grain.query-processor.interface :as query-processor :refer [defquery]]
             [ai.obney.grain.datastar.interface :as ds]
@@ -152,9 +153,14 @@
 
 (defn start
   []
-  (u/set-global-context!
-   {:app-name "example-app" :env "dev"})
-  (ig/init system))
+  (let [app (ig/init system)]
+    (u/set-global-context!
+     {:app-name "example-app" :env "dev"})
+    (code-agent-tools/install!
+     {:system app
+      :context (::context app)
+      :mode :dev})
+    app))
 
 (defn stop
   [app]
