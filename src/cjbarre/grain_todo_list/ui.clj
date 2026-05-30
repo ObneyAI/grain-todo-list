@@ -2,16 +2,7 @@
   (:require [cjbarre.grain-todo-list.ui.components :as c]))
 
 (defn shell [{:keys [title]} & body]
-  [:div#app
-   [:main {:class "gallery-page min-h-screen bg-base-100 text-base-content"}
-    [:div {:class "mx-auto max-w-6xl px-4 py-8"}
-     [:div {:class "app-vista rounded-[1.25rem] border border-white/60 p-4 shadow-xl sm:p-6"}
-      [:header {:class "mb-8 flex flex-col gap-2 border-b border-base-300 pb-6"}
-       [:p {:class "text-sm font-medium uppercase text-primary"} "Grain Todo"]
-       [:h1 {:class "text-3xl font-semibold leading-tight"} title]
-       [:p {:class "max-w-2xl text-sm text-base-content/70"}
-        "A personal GTD workspace backed by Grain events and Datastar updates."]]
-      body]]]])
+  (apply c/app-shell {:title title} body))
 
 (defn home-page [{:keys [buckets deferred due-soon inactive projects review]}]
   (shell {:title "GTD Workspace"}
@@ -36,8 +27,8 @@
                             :status (if (= :active (:status review))
                                       "A weekly review is active."
                                       "No active weekly review.")
-                            :class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"
-                            :action (c/value-chip {:label "open review" :href "/review"})})]]))
+                            :class (c/surface-class :card nil)
+                            :action (c/chip {:label "open review" :href "/review"})})]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
   (shell {:title (str (get c/bucket-labels bucket "Tasks") " Tasks")}
@@ -63,14 +54,14 @@
          (c/action-error)
          (if project
            [:div {:class "space-y-6"}
-            [:section {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
+            (c/surface {:tag :section :variant :card}
              [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
               [:div {:class "min-w-0 space-y-2"}
                (c/project-editor project)
                (c/task-count-row (:task-counts project))]
               (c/project-actions project)]
              [:p {:class "mt-4 text-sm text-base-content/70"}
-              (str "Status: " (clojure.core/name (:status project)))]]
+              (str "Status: " (clojure.core/name (:status project)))])
             (when (= :active (:status project))
               (c/quick-add {:bucket :next :project-id (:project-id project)}))
             (c/task-list tasks "No active tasks for this project." projects)]
@@ -88,13 +79,11 @@
                   all-projects-reviewed? (every? reviewed-project-ids (map :project-id review-projects))
                   review-complete? (and all-buckets-reviewed? all-projects-reviewed?)]
               [:div {:class "space-y-8"}
-               [:div {:class "rounded-box border border-base-300 bg-base-100 p-4 shadow-sm"}
+               (c/surface {:variant :card}
                 [:p {:class "text-sm font-medium"} "Review each bucket and active project."]
                 [:div {:class "mt-3 flex flex-wrap gap-2 text-xs text-base-content/70"}
-                 [:span {:class "badge badge-outline"}
-                  (str (count reviewed-buckets) "/4 buckets reviewed")]
-                 [:span {:class "badge badge-outline"}
-                  (str (count reviewed-project-ids) "/" (count review-projects) " projects reviewed")]]]
+                 (c/badge {:label (str (count reviewed-buckets) "/4 buckets reviewed")})
+                 (c/badge {:label (str (count reviewed-project-ids) "/" (count review-projects) " projects reviewed")})])
                [:div {:class "grid gap-8 xl:grid-cols-2"}
                 (for [bucket [:inbox :next :waiting :someday]
                       :let [tasks (get buckets bucket)
@@ -118,14 +107,14 @@
                                (c/review-project-list review reviewed-project-ids review-projects))
                (c/page-section {:title "Done / Canceled" :count (count inactive)}
                                (c/task-summary-list inactive "No recently completed or canceled tasks." projects))
-               [:button {:class "btn btn-primary"
-                         :disabled (not review-complete?)
-                         :data-on:click (c/command-click "todo/complete-weekly-review"
-                                                         {:review-id (:review-id review)})}
-                "Complete review"]])
-            [:button {:class "btn btn-primary"
-                      :data-on:click "$['command/name'] = 'todo/start-weekly-review'; @post('/actions');"}
-             "Start weekly review"])]))
+               (c/action-button {:label "Complete review"
+                                 :class "btn-primary"
+                                 :disabled? (not review-complete?)
+                                 :on-click (c/command-click "todo/complete-weekly-review"
+                                                            {:review-id (:review-id review)})})])
+            (c/action-button {:label "Start weekly review"
+                              :class "btn-primary"
+                              :on-click "$['command/name'] = 'todo/start-weekly-review'; @post('/actions');"}))]))
 
 (defn dev-gallery-page []
   (c/dev-gallery-page))
