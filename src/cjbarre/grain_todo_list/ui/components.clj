@@ -468,6 +468,46 @@
                (task-summary-row task projects)))
     (empty-state empty-message)))
 
+(defn planning-summary-row
+  [{:keys [label count items empty-message projects muted?]}]
+  [:section {:class "border-t border-base-content/10 pt-3 first:border-t-0 first:pt-0"}
+   [:div {:class "flex items-center justify-between gap-3"}
+    [:h3 {:class "truncate text-sm font-semibold"} label]
+    [:span {:class "status-token"} count]]
+   (cond
+     (seq items)
+     [:div {:class "mt-3"}
+      (if muted?
+        [:p {:class "text-sm text-base-content/60"}
+         (str count " item" (when (not= 1 count) "s") " closed")]
+        (task-summary-list items empty-message projects))]
+
+     muted?
+     [:p {:class "mt-2 text-sm text-base-content/60"} empty-message]
+
+     :else
+     [:p {:class "mt-2 text-sm text-base-content/60"} empty-message])])
+
+(defn planning-summary
+  [{:keys [deferred due-soon inactive projects]}]
+  [:div {:class "grid gap-3"}
+   (planning-summary-row {:label "Deferred"
+                          :count (count deferred)
+                          :items deferred
+                          :empty-message "No deferred tasks."
+                          :projects projects})
+   (planning-summary-row {:label "Due Soon"
+                          :count (count due-soon)
+                          :items due-soon
+                          :empty-message "No due dates yet."
+                          :projects projects})
+   (planning-summary-row {:label "Done / Canceled"
+                          :count (count inactive)
+                          :items inactive
+                          :empty-message "No completed or canceled tasks."
+                          :projects projects
+                          :muted? true})])
+
 (defn project-actions [{:keys [project-id status]}]
   (chip-row
    (chip {:label (name status) :active? true :disabled? true})
@@ -865,7 +905,13 @@
            (project-add)
            (projects-list [active-project]))
     (panel {:title "Weekly Review"
-            :status "No active weekly review."})]])
+            :status "No active weekly review."})
+    (panel {:title "Planning"
+            :status "Scheduled and recently closed work."}
+           (planning-summary {:deferred []
+                              :due-soon [active-task]
+                              :inactive []
+                              :projects gallery-projects}))]])
 
 (defn gallery-specimen
   [{:keys [compact?]}]

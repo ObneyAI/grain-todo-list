@@ -353,6 +353,11 @@
                                          :someday []}
                                 :deferred []
                                 :due-soon []
+                                :inactive [{:task-id task-2-id
+                                            :title "Closed task"
+                                            :bucket :inbox
+                                            :status :completed
+                                            :order 2000}]
                                 :projects []
                                 :review {}})]
       (let [leaves (tree-seq coll? seq hiccup)
@@ -364,6 +369,9 @@
         (is (some #(= "Weekly Review" %) leaves))
         (is (some #(= "Capture a task" %) leaves))
         (is (some #(= "UI task" %) leaves))
+        (is (some #(= "Done / Canceled" %) leaves))
+        (is (some #(= "1 item closed" %) leaves))
+        (is (not (some #(= "Closed task" %) leaves)))
         (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
         (is (some #(= "/review" (:href %)) attrs)))))
 

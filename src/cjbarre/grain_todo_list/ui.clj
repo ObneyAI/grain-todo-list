@@ -18,21 +18,7 @@
                                          :count (count (get buckets bucket))
                                          :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
                                         (c/task-list (get buckets bucket) "Nothing here." projects))
-                        {:key bucket})))
-           (c/panel {:title "Planning"
-                     :status "Scheduled, deferred, and recently closed work."}
-                    (c/page-section {:title "Deferred"
-                                     :count (count deferred)
-                                     :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
-                                    (c/task-list deferred "No deferred tasks." projects))
-                    (c/page-section {:title "Due Soon"
-                                     :count (count due-soon)
-                                     :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
-                                    (c/due-soon-list due-soon projects))
-                    (c/page-section {:title "Done / Canceled"
-                                     :count (count inactive)
-                                     :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
-                                    (c/task-list inactive "No completed or canceled tasks." projects)))]
+                        {:key bucket})))]
           [:aside {:class "grid content-start gap-6"}
            (c/panel {:title "Projects"
                      :count (count projects)}
@@ -44,7 +30,13 @@
             (c/panel {:title "Weekly Review"
                       :status (if (= :active (:status review))
                                 "A weekly review is active."
-                                "No active weekly review.")})]]]))
+                                "No active weekly review.")})]
+           (c/panel {:title "Planning"
+                     :status "Scheduled and recently closed work."}
+                    (c/planning-summary {:deferred deferred
+                                         :due-soon due-soon
+                                         :inactive inactive
+                                         :projects projects}))]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
   (shell {:title (str (get c/bucket-labels bucket "Tasks") " Tasks")}
