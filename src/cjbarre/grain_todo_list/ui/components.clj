@@ -382,11 +382,18 @@
    {:key :defer-until :label (when defer-until (str "Deferred " (date-value defer-until)))}
    {:key :project :label (when project-id (or (task-project-name task projects) "Project")) :class "status-token-blue"}])
 
-(defn task-open-link
-  [{:keys [task-id]}]
-  (chip {:label "open" :href (str "/task?task-id=" task-id)}))
+(def clickable-content-class
+  "block min-w-0 flex-1 rounded-lg -m-2 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary hover:bg-base-100/45")
 
-(defn task-primary-action [{:keys [task-id status] :as task}]
+(defn task-href
+  [{:keys [task-id]}]
+  (str "/task?task-id=" task-id))
+
+(defn project-href
+  [{:keys [project-id]}]
+  (str "/project?project-id=" project-id))
+
+(defn task-primary-action [{:keys [task-id status]}]
   (case status
     :active (chip {:label "done"
                    :on-click (command-click "todo/complete-task" {:task-id task-id})})
@@ -394,14 +401,15 @@
                       :on-click (command-click "todo/archive-task" {:task-id task-id})})
     :canceled (chip {:label "active"
                      :on-click (command-click "todo/reactivate-task" {:task-id task-id})})
-    (task-open-link task)))
+    nil))
 
 (defn task-summary-row
   ([task] (task-summary-row task []))
   ([{:keys [task-id title due-at] :as task} projects]
    [:div {:key task-id
           :class "flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between"}
-    [:div {:class "min-w-0"}
+    [:a {:class clickable-content-class
+         :href (task-href task)}
      [:h3 {:class "truncate text-sm font-medium"} title]
      (badge-row (task-badges task projects))]
     (when due-at
@@ -412,12 +420,13 @@
   ([{:keys [title] :as task} projects]
    (surface {:tag :article :variant :compact-card}
             [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
-             [:div {:class "min-w-0 space-y-2"}
+             [:a {:class (str clickable-content-class " space-y-2")
+                  :href (task-href task)}
               [:h3 {:class "font-medium"} title]
               (badge-row (task-badges task projects))]
-             [:div {:class "flex flex-wrap items-center gap-2"}
-              (task-open-link task)
-              (task-primary-action task)]])))
+             (when-let [action (task-primary-action task)]
+               [:div {:class "flex flex-wrap items-center gap-2"}
+                action])])))
 
 (defn task-list
   ([tasks empty-message] (task-list tasks empty-message []))
@@ -449,7 +458,6 @@
 
 (defn project-actions [{:keys [project-id status]}]
   (chip-row
-   (chip {:label "open" :href (str "/project?project-id=" project-id)})
    (chip {:label (name status) :active? true :disabled? true})
    (when (= :active status)
      (chip {:label "completed"
@@ -485,7 +493,8 @@
 (defn project-summary-row [{:keys [project-id name status task-counts] :as project}]
   [:div {:key project-id
          :class "flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"}
-   [:div {:class "min-w-0"}
+   [:a {:class clickable-content-class
+        :href (project-href project)}
     [:h3 {:class "truncate text-sm font-medium"} name]
     (badge-row [{:key :status :label (clojure.core/name status)}
                 {:key :active :label (str (get task-counts :active 0) " active")}
@@ -495,11 +504,11 @@
 (defn project-card [{:keys [project-id name status task-counts] :as project}]
   (surface {:tag :article :variant :card}
            [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
-            [:div {:class "min-w-0 space-y-2"}
+            [:a {:class (str clickable-content-class " space-y-2")
+                 :href (project-href project)}
              [:h3 {:class "font-medium"} name]
              [:p {:class "text-sm text-base-content/60"} (clojure.core/name status)]
-             (task-count-row task-counts)]
-            (chip {:label "open" :href (str "/project?project-id=" project-id)})]))
+             (task-count-row task-counts)]]))
 
 (defn task-detail-panel [task projects]
   [:div {:class "grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"}
@@ -542,7 +551,7 @@
 
 (defn projects-list [projects]
   (if (seq projects)
-    [:div {:class "grid gap-3 md:grid-cols-2"}
+    [:div {:class "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]"}
      (for [project projects]
        (with-meta (project-card project) {:key (:project-id project)}))]
     (empty-state "No active projects.")))
@@ -762,7 +771,6 @@
          (action-button {:label "Create" :class "btn-primary"})
          (action-button {:label "Secondary" :class "btn-outline"})]
         (chip-row
-         (inert (chip {:label "open" :href "#"}))
          (chip {:label "active" :active? true :disabled? true})
          (chip {:label "cancel" :danger? true})))
        (fundamental-tray
@@ -848,9 +856,9 @@
                         (when-not compact?
                           (inert (task-card waiting-task gallery-projects)))
                         (inert (task-card completed-task gallery-projects))
-                        (task-summary-list gallery-tasks "No tasks in this bucket." gallery-projects)]
+                        (inert (task-summary-list gallery-tasks "No tasks in this bucket." gallery-projects))]
                        [:div {:class "space-y-4"}
-                        (due-soon-list [active-task] gallery-projects)
+                        (inert (due-soon-list [active-task] gallery-projects))
                         (task-list [] "No completed or canceled tasks." gallery-projects)
                         (due-soon-list [] gallery-projects)]])
 

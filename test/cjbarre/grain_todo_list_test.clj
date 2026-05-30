@@ -328,11 +328,14 @@
                                           :name "Summary project"
                                           :status :active
                                           :task-counts {:active 1 :completed 0}})]
-          leaves (tree-seq coll? seq hiccup)]
+          leaves (tree-seq coll? seq hiccup)
+          attrs (filter map? leaves)]
       (is (some #(= "Substrate" %) leaves))
       (is (some #(= "Nothing to show." %) leaves))
       (is (some #(= "Summary task" %) leaves))
-      (is (some #(= "Summary project" %) leaves))))
+      (is (some #(= "Summary project" %) leaves))
+      (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
+      (is (some #(= (str "/project?project-id=" project-id) (:href %)) attrs))))
 
   (testing "pure Hiccup rendering can be tested without Grain processors"
     (let [hiccup (ui/home-page {:buckets {:inbox [{:task-id task-id
@@ -426,10 +429,12 @@
                 :status :active
                 :order 1000}
           card-leaves (tree-seq coll? seq (c/task-card task []))
+          card-attrs (filter map? card-leaves)
           page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
           page-attrs (filter map? page-leaves)]
       (is (some #(= "Minimal card" %) card-leaves))
-      (is (some #(= "open" %) card-leaves))
+      (is (not (some #(= "open" %) card-leaves)))
+      (is (some #(= (str "/task?task-id=" task-id) (:href %)) card-attrs))
       (is (not (some #(= "Edit details" %) card-leaves)))
       (is (some #(= "Status" %) page-leaves))
       (is (some #(= "Bucket" %) page-leaves))

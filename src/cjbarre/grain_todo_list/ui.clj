@@ -23,12 +23,14 @@
           [:aside {:class "space-y-6"}
            (c/page-section {:title "Projects" :count (count projects)}
                            (c/projects-list projects))
-           (c/page-section {:title "Weekly Review"
-                            :status (if (= :active (:status review))
-                                      "A weekly review is active."
-                                      "No active weekly review.")
-                            :class (c/surface-class :card nil)
-                            :action (c/chip {:label "open review" :href "/review"})})]]))
+           [:a {:class "block rounded-box focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                :href "/review"
+                :aria-label "Weekly review"}
+            (c/page-section {:title "Weekly Review"
+                             :status (if (= :active (:status review))
+                                       "A weekly review is active."
+                                       "No active weekly review.")
+                             :class (c/surface-class :card nil)})]]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
   (shell {:title (str (get c/bucket-labels bucket "Tasks") " Tasks")}
