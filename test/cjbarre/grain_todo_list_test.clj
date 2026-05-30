@@ -339,6 +339,7 @@
       (is (some #(= "Nothing to show." %) leaves))
       (is (some #(= "Summary task" %) leaves))
       (is (some #(= "Summary project" %) leaves))
+      (is (= 1 (count (filter #(= "Due 2026-05-23" %) leaves))))
       (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
       (is (some #(= (str "/project?project-id=" project-id) (:href %)) attrs))))
 
@@ -451,7 +452,9 @@
                 :title "Minimal card"
                 :bucket :next
                 :status :active
-                :order 1000}
+                :order 1000
+                :project-id project-id
+                :due-at later}
           card-leaves (tree-seq coll? seq (c/task-card task []))
           card-attrs (filter map? card-leaves)
           page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
@@ -459,6 +462,11 @@
       (is (some #(= "Minimal card" %) card-leaves))
       (is (not (some #(= "open" %) card-leaves)))
       (is (some #(= (str "/task?task-id=" task-id) (:href %)) card-attrs))
+      (is (some #(= "Next" %) card-leaves))
+      (is (some #(= "active" %) card-leaves))
+      (is (some #(= "Project" %) card-leaves))
+      (is (some #(= "Due 2026-05-23" %) card-leaves))
+      (is (some #(= "done" %) card-leaves))
       (is (not (some #(= "Edit details" %) card-leaves)))
       (is (some #(= "Status" %) page-leaves))
       (is (some #(= "Bucket" %) page-leaves))

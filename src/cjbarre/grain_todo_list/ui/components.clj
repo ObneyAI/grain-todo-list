@@ -387,12 +387,15 @@
          [:p {:class "mt-1"} (or (date-value defer-until) "None")]]]))))
 
 (defn task-badges
-  [{:keys [bucket due-at defer-until project-id status] :as task} projects]
+  [{:keys [bucket project-id status] :as task} projects]
   [{:key :bucket :label (when bucket (get bucket-labels bucket (name bucket)))}
    {:key :status :label (when status (name status))}
-   {:key :due-at :label (when due-at (str "Due " (date-value due-at))) :class "status-token-warning"}
-   {:key :defer-until :label (when defer-until (str "Deferred " (date-value defer-until)))}
    {:key :project :label (when project-id (or (task-project-name task projects) "Project")) :class "status-token-blue"}])
+
+(defn task-schedule-badges
+  [{:keys [due-at defer-until]}]
+  [{:key :due-at :label (when due-at (str "Due " (date-value due-at))) :class "status-token-warning"}
+   {:key :defer-until :label (when defer-until (str "Deferred " (date-value defer-until))) :class "status-token-schedule"}])
 
 (def clickable-content-class
   "block min-w-0 flex-1 rounded-lg -m-2 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary hover:bg-base-100/45")
@@ -417,27 +420,29 @@
 
 (defn task-summary-row
   ([task] (task-summary-row task []))
-  ([{:keys [task-id title due-at] :as task} projects]
+  ([{:keys [task-id title] :as task} projects]
    [:div {:key task-id
-          :class "flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between"}
+          :class "flex flex-col gap-2 p-3"}
     [:a {:class clickable-content-class
          :href (task-href task)}
      [:h3 {:class "truncate text-sm font-medium"} title]
-     (badge-row (task-badges task projects))]
-    (when due-at
-      (badge {:label (date-value due-at) :class "status-token-warning"}))]))
+     [:div {:class "mt-2 flex flex-wrap items-center gap-2"}
+      (badge-row (task-badges task projects))
+      (badge-row (task-schedule-badges task))]]]))
 
 (defn task-card
   ([task] (task-card task []))
   ([{:keys [title] :as task} projects]
    (surface {:tag :article :variant :compact-card}
-            [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
-             [:a {:class (str clickable-content-class " space-y-2")
+            [:div {:class "grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"}
+             [:a {:class clickable-content-class
                   :href (task-href task)}
-              [:h3 {:class "font-medium"} title]
-              (badge-row (task-badges task projects))]
+              [:h3 {:class "truncate font-medium"} title]
+              [:div {:class "mt-2 flex flex-wrap items-center gap-2"}
+               (badge-row (task-badges task projects))
+               (badge-row (task-schedule-badges task))]]
              (when-let [action (task-primary-action task)]
-               [:div {:class "flex flex-wrap items-center gap-2"}
+               [:div {:class "flex justify-start sm:justify-end"}
                 action])])))
 
 (defn task-list
