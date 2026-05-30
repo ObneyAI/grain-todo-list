@@ -24,7 +24,7 @@
                      :count (count projects)}
                     (c/project-add)
                     (c/projects-list projects))
-           [:a {:class "block rounded-box focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+           [:a {:class "block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 :href "/review"
                 :aria-label "Weekly review"}
             (c/panel {:title "Weekly Review"

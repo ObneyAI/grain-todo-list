@@ -35,8 +35,9 @@
 @layer components {
   .gallery-page {
     background:
-      radial-gradient(circle at 18% 0%, color-mix(in oklch, var(--color-primary) 18%, transparent), transparent 34rem),
-      linear-gradient(180deg, color-mix(in oklch, var(--color-base-200) 64%, white), var(--color-base-100) 24rem);
+      radial-gradient(circle at 18% 0%, color-mix(in oklch, var(--color-primary) 20%, transparent), transparent 34rem),
+      radial-gradient(ellipse at 78% 18%, rgb(190 222 241 / 0.46), transparent 30rem),
+      linear-gradient(180deg, rgb(218 234 244), rgb(198 219 232) 24rem, rgb(184 209 225));
   }
 
   .gallery-window-controls {
