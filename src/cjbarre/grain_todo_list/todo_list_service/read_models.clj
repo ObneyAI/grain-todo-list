@@ -5,13 +5,10 @@
 (def task-event-types
   #{:todo/task-captured
     :todo/task-renamed
-    :todo/task-moved-to-bucket
     :todo/task-assigned-to-project
     :todo/task-removed-from-project
-    :todo/task-due-at-set
-    :todo/task-due-at-cleared
-    :todo/task-deferred
-    :todo/task-defer-date-cleared
+    :todo/task-due-within-set
+    :todo/task-due-within-cleared
     :todo/task-completed
     :todo/task-archived
     :todo/task-canceled
@@ -28,32 +25,25 @@
 (def review-event-types
   #{:todo/weekly-review-started
     :todo/project-reviewed
-    :todo/bucket-reviewed
+    :todo/task-reviewed
     :todo/weekly-review-completed})
 
 (defmulti tasks* (fn [_state event] (:event/type event)))
 
 (defmethod tasks* :todo/task-captured
-  [state {:keys [task-id title bucket status order project-id due-at defer-until]}]
+  [state {:keys [task-id title status order project-id due-within-days due-within-set-at]}]
   (assoc state task-id
          (cond-> {:task-id task-id
                   :title title
-                  :bucket bucket
                   :status status
                   :order order}
            project-id (assoc :project-id project-id)
-           due-at (assoc :due-at due-at)
-           defer-until (assoc :defer-until defer-until))))
+           due-within-days (assoc :due-within-days due-within-days)
+           due-within-set-at (assoc :due-within-set-at due-within-set-at))))
 
 (defmethod tasks* :todo/task-renamed
   [state {:keys [task-id title]}]
   (assoc-in state [task-id :title] title))
-
-(defmethod tasks* :todo/task-moved-to-bucket
-  [state {:keys [task-id bucket order]}]
-  (-> state
-      (assoc-in [task-id :bucket] bucket)
-      (assoc-in [task-id :order] order)))
 
 (defmethod tasks* :todo/task-assigned-to-project
   [state {:keys [task-id project-id]}]
@@ -63,21 +53,15 @@
   [state {:keys [task-id]}]
   (update state task-id dissoc :project-id))
 
-(defmethod tasks* :todo/task-due-at-set
-  [state {:keys [task-id due-at]}]
-  (assoc-in state [task-id :due-at] due-at))
+(defmethod tasks* :todo/task-due-within-set
+  [state {:keys [task-id due-within-days due-within-set-at]}]
+  (-> state
+      (assoc-in [task-id :due-within-days] due-within-days)
+      (assoc-in [task-id :due-within-set-at] due-within-set-at)))
 
-(defmethod tasks* :todo/task-due-at-cleared
+(defmethod tasks* :todo/task-due-within-cleared
   [state {:keys [task-id]}]
-  (update state task-id dissoc :due-at))
-
-(defmethod tasks* :todo/task-deferred
-  [state {:keys [task-id defer-until]}]
-  (assoc-in state [task-id :defer-until] defer-until))
-
-(defmethod tasks* :todo/task-defer-date-cleared
-  [state {:keys [task-id]}]
-  (update state task-id dissoc :defer-until))
+  (update state task-id dissoc :due-within-days :due-within-set-at))
 
 (defmethod tasks* :todo/task-completed
   [state {:keys [task-id]}]
@@ -143,15 +127,15 @@
    :status :active
    :started-at started-at
    :reviewed-project-ids #{}
-   :reviewed-buckets #{}})
+   :reviewed-task-ids #{}})
 
 (defmethod weekly-review* :todo/project-reviewed
   [state {:keys [project-id]}]
   (update state :reviewed-project-ids (fnil conj #{}) project-id))
 
-(defmethod weekly-review* :todo/bucket-reviewed
-  [state {:keys [bucket]}]
-  (update state :reviewed-buckets (fnil conj #{}) bucket))
+(defmethod weekly-review* :todo/task-reviewed
+  [state {:keys [task-id]}]
+  (update state :reviewed-task-ids (fnil conj #{}) task-id))
 
 (defmethod weekly-review* :todo/weekly-review-completed
   [state {:keys [completed-at]}]
@@ -172,39 +156,27 @@
   [task]
   (= :active (:status task)))
 
-(defn deferred?
-  ([task] (deferred? task (OffsetDateTime/now)))
-  ([task now]
-   (when-let [defer-until (:defer-until task)]
-     (.isAfter defer-until now))))
-
 (defn ordered-tasks
   [tasks]
   (sort-by (juxt :order :title :task-id) tasks))
 
-(defn tasks-for-bucket
-  ([ctx bucket] (tasks-for-bucket ctx bucket (OffsetDateTime/now)))
-  ([ctx bucket now]
-   (->> (vals (all-tasks ctx))
-        (filter active-task?)
-        (filter #(= bucket (:bucket %)))
-        (remove #(deferred? % now))
-        ordered-tasks)))
+(defn active-tasks
+  [ctx]
+  (->> (vals (all-tasks ctx))
+       (filter active-task?)
+       ordered-tasks))
 
-(defn deferred-tasks
-  ([ctx] (deferred-tasks ctx (OffsetDateTime/now)))
-  ([ctx now]
-   (->> (vals (all-tasks ctx))
-        (filter active-task?)
-        (filter #(deferred? % now))
-        ordered-tasks)))
+(defn effective-due-time
+  [{:keys [due-within-days due-within-set-at]}]
+  (when (and due-within-days due-within-set-at)
+    (.plusDays ^OffsetDateTime due-within-set-at due-within-days)))
 
 (defn due-soon-tasks
   [ctx]
   (->> (vals (all-tasks ctx))
        (filter active-task?)
-       (filter :due-at)
-       (sort-by (juxt :due-at :order :title :task-id))))
+       (filter effective-due-time)
+       (sort-by (juxt effective-due-time :order :title :task-id))))
 
 (defn inactive-tasks
   [ctx]

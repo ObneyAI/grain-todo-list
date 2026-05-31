@@ -167,7 +167,7 @@ Use `src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj` for todo-s
 
 - quick-add and project-add forms
 - task/project cards, summaries, detail panels, and action controls
-- bucket labels, schedule controls, planning summaries, and review controls
+- due-within controls, planning summaries, and task/project review controls
 - todo dev gallery fixtures and specimens
 
 ---
@@ -282,7 +282,7 @@ Use Grain command definitions from the command processor namespace. Keep each co
 (defcommand :todo capture-task
   {:authorized? (constantly true)}
   "Capture a task."
-  [{{:keys [title bucket]} :command :as ctx}]
+  [{{:keys [title]} :command :as ctx}]
   (cond
     (not (seq title))
     {::anom/category ::anom/incorrect
@@ -295,7 +295,7 @@ Use Grain command definitions from the command processor namespace. Keep each co
                   :tags #{[:todo-task task-id]}
                   :body {:task-id task-id
                          :title title
-                         :bucket bucket}})]
+                         :status :active}})]
        :datastar/signals {:__toast "Task captured."}})))
 ```
 
@@ -331,10 +331,9 @@ Pattern:
 (defmulti tasks* (fn [_state event] (:event/type event)))
 
 (defmethod tasks* :todo/task-captured
-  [state {:keys [task-id title bucket]}]
+  [state {:keys [task-id title]}]
   (assoc state task-id {:task-id task-id
                         :title title
-                        :bucket bucket
                         :status :active}))
 
 (defmethod tasks* :todo/task-completed
@@ -470,7 +469,7 @@ Plain Clojure values are escaped as JavaScript literals:
 
 ```clojure
 (ds/assign :task-id task-id)
-(ds/assign :bucket "next")
+(ds/assign :due-within-days 3)
 ```
 
 Use `ds/expr` only when the value is intentionally raw Datastar or JavaScript:
@@ -492,7 +491,7 @@ Use `ds/signals` for explicit signal initialization:
 
 ```clojure
 [:div (ds/signals {:title ""
-                   :bucket "inbox"})]
+                   :due-within-days ""})]
 ```
 
 Use `ds/bind` for two-way input binding:
@@ -524,7 +523,7 @@ Use these helpers for search, filters, pagination, tabs, and other signal-carryi
    :assign {:search (ds/expr "$evt.target.value")}})
 
 (ds/on-change-repost
-  {:assign {:bucket (ds/expr "$evt.target.value")}})
+  {:assign {:project-id (ds/expr "$evt.target.value")}})
 
 (ds/on-click-repost
   {:assign {:page (ds/expr "$page + 1")}})
@@ -587,19 +586,18 @@ For select controls that either set or clear a relationship, use the branch form
                   :extra {:task-id task-id}})))
 ```
 
-For date inputs, derive the ISO value with `:let` and branch between set and clear commands:
+For due-within inputs, coerce the signal to a number and branch between set and clear commands:
 
 ```clojure
 (ds/on-command
   :change
-  (cond-> {:let [['selected (ds/expr (ds/signal due-signal))]
-                 ['dueAt (ds/expr "new Date(selected + 'T00:00:00').toISOString()")]]
-           :when (ds/expr "selected")
-           :then {:command :todo/set-task-due-at
+  (cond-> {:let [['raw (ds/expr (ds/signal due-signal))]]
+           :when (ds/expr "raw !== '' && raw !== null")
+           :then {:command :todo/set-task-due-within
                   :extra {:task-id task-id
-                          :due-at (ds/expr "dueAt")}}}
-    due-at
-    (assoc :else {:command :todo/clear-task-due-at
+                          :due-within-days (ds/expr "Number(raw)")}}}
+    due-within-days
+    (assoc :else {:command :todo/clear-task-due-within
                   :extra {:task-id task-id}})))
 ```
 
@@ -611,11 +609,10 @@ Use `ds/action-form` for command forms. The helper owns Datastar behavior; the c
 
 ```clojure
 (defn quick-add
-  [{:keys [bucket project-id]}]
+  [{:keys [project-id]}]
   (ds/action-form
     {:command :todo/capture-task
-     :fields (cond-> {:title ""
-                      :bucket (name (or bucket :inbox))}
+     :fields (cond-> {:title ""}
                project-id (assoc :project-id project-id))}
     [:input
      (merge {:class "input input-bordered min-w-0 flex-1"
@@ -623,12 +620,6 @@ Use `ds/action-form` for command forms. The helper owns Datastar behavior; the c
              :placeholder "Capture a task"
              :required true}
             (ds/bind :title))]
-    [:select
-     (merge {:class "select select-bordered sm:w-40"
-             :aria-label "Bucket"}
-            (ds/bind :bucket))
-     (for [[value label] bucket-labels]
-       [:option {:key value :value (name value)} label])]
     [:button {:type "submit" :class "btn btn-primary"} "Add"]))
 ```
 

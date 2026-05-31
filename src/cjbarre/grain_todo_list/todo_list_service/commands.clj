@@ -2,7 +2,6 @@
   (:require [ai.obney.grain.command-processor-v2.interface :refer [defcommand]]
             [ai.obney.grain.event-store-v3.interface :refer [->event]]
             [cjbarre.grain-todo-list.todo-list-service.read-models :as rm]
-            [cjbarre.grain-todo-list.todo-list-service.schemas :as schemas]
             [clojure.set :as set]
             [cognitect.anomalies :as anom])
   (:import [java.time OffsetDateTime]))
@@ -32,28 +31,25 @@
 (defcommand :todo capture-task
   {:authorized? (constantly true)}
   "Capture a new task."
-  [{{:keys [task-id title bucket project-id due-at defer-until order]} :command :as ctx}]
+  [{{:keys [task-id title project-id due-within-days order]} :command :as ctx}]
   (let [task-id (or task-id (random-uuid))
-        bucket (or bucket :inbox)
-        due-at (some-> due-at schemas/coerce-offset-date-time)
-        defer-until (some-> defer-until schemas/coerce-offset-date-time)
+        due-within-set-at (when due-within-days (OffsetDateTime/now))
         project (when project-id (require-project ctx project-id))]
     (cond
       (contains? project ::anom/category) project
       (and project (not= :active (:status project))) (conflict "Cannot assign a task to an inactive project.")
       :else
-      (let [order (or order (next-order (rm/tasks-for-bucket ctx bucket)))]
+      (let [order (or order (next-order (rm/active-tasks ctx)))]
         {:command-result/events
          [(->event {:type :todo/task-captured
                     :tags #{[:task task-id]}
                     :body (cond-> {:task-id task-id
                                    :title title
-                                   :bucket bucket
                                    :status :active
                                    :order order}
                             project-id (assoc :project-id project-id)
-                            due-at (assoc :due-at due-at)
-                            defer-until (assoc :defer-until defer-until))})]
+                            due-within-days (assoc :due-within-days due-within-days
+                                                   :due-within-set-at due-within-set-at))})]
          :datastar/signals {:__toast "Task captured."}}))))
 
 (defcommand :todo rename-task
@@ -67,20 +63,6 @@
                   :tags #{[:task task-id]}
                   :body {:task-id task-id :title title}})]
        :datastar/signals {:__toast "Task renamed."}})))
-
-(defcommand :todo move-task-to-bucket
-  {:authorized? (constantly true)}
-  [{{:keys [task-id bucket order]} :command :as ctx}]
-  (let [task (require-task ctx task-id)]
-    (cond
-      (contains? task ::anom/category) task
-      (not= :active (:status task)) (conflict "Only active tasks can be moved.")
-      :else
-      (let [order (or order (next-order (rm/tasks-for-bucket ctx bucket)))]
-        {:command-result/events
-         [(->event {:type :todo/task-moved-to-bucket
-                    :tags #{[:task task-id]}
-                    :body {:task-id task-id :bucket bucket :order order}})]}))))
 
 (defcommand :todo assign-task-to-project
   {:authorized? (constantly true)}
@@ -111,49 +93,27 @@
                   :tags #{[:task task-id]}
                   :body {:task-id task-id :project-id (:project-id task)}})]})))
 
-(defcommand :todo set-task-due-at
+(defcommand :todo set-task-due-within
   {:authorized? (constantly true)}
-  [{{:keys [task-id due-at]} :command :as ctx}]
-  (let [task (require-task ctx task-id)
-        due-at (schemas/coerce-offset-date-time due-at)]
+  [{{:keys [task-id due-within-days]} :command :as ctx}]
+  (let [task (require-task ctx task-id)]
     (if (contains? task ::anom/category)
       task
       {:command-result/events
-       [(->event {:type :todo/task-due-at-set
+       [(->event {:type :todo/task-due-within-set
                   :tags #{[:task task-id]}
-                  :body {:task-id task-id :due-at due-at}})]})))
+                  :body {:task-id task-id
+                         :due-within-days due-within-days
+                         :due-within-set-at (OffsetDateTime/now)}})]})))
 
-(defcommand :todo clear-task-due-at
+(defcommand :todo clear-task-due-within
   {:authorized? (constantly true)}
   [{{:keys [task-id]} :command :as ctx}]
   (let [task (require-task ctx task-id)]
     (if (contains? task ::anom/category)
       task
       {:command-result/events
-       [(->event {:type :todo/task-due-at-cleared
-                  :tags #{[:task task-id]}
-                  :body {:task-id task-id}})]})))
-
-(defcommand :todo defer-task
-  {:authorized? (constantly true)}
-  [{{:keys [task-id defer-until]} :command :as ctx}]
-  (let [task (require-task ctx task-id)
-        defer-until (schemas/coerce-offset-date-time defer-until)]
-    (if (contains? task ::anom/category)
-      task
-      {:command-result/events
-       [(->event {:type :todo/task-deferred
-                  :tags #{[:task task-id]}
-                  :body {:task-id task-id :defer-until defer-until}})]})))
-
-(defcommand :todo clear-task-defer-date
-  {:authorized? (constantly true)}
-  [{{:keys [task-id]} :command :as ctx}]
-  (let [task (require-task ctx task-id)]
-    (if (contains? task ::anom/category)
-      task
-      {:command-result/events
-       [(->event {:type :todo/task-defer-date-cleared
+       [(->event {:type :todo/task-due-within-cleared
                   :tags #{[:task task-id]}
                   :body {:task-id task-id}})]})))
 
@@ -305,28 +265,32 @@
                   :tags #{[:review review-id]}
                   :body {:review-id review-id :project-id project-id}})]})))
 
-(defcommand :todo mark-bucket-reviewed
+(defcommand :todo mark-task-reviewed
   {:authorized? (constantly true)}
-  [{{:keys [review-id bucket]} :command :as ctx}]
-  (let [review (rm/current-weekly-review ctx)]
+  [{{:keys [review-id task-id]} :command :as ctx}]
+  (let [review (rm/current-weekly-review ctx)
+        task (require-task ctx task-id)]
     (cond
+      (contains? task ::anom/category) task
       (not= review-id (:review-id review)) (conflict "Review is not active.")
       (not= :active (:status review)) (conflict "Review is not active.")
+      (not= :active (:status task)) (conflict "Only active tasks can be reviewed.")
       :else
       {:command-result/events
-       [(->event {:type :todo/bucket-reviewed
+       [(->event {:type :todo/task-reviewed
                   :tags #{[:review review-id]}
-                  :body {:review-id review-id :bucket bucket}})]})))
+                  :body {:review-id review-id :task-id task-id}})]})))
 
 (defcommand :todo complete-weekly-review
   {:authorized? (constantly true)}
   [{{:keys [review-id]} :command :as ctx}]
   (let [review (rm/current-weekly-review ctx)
+        active-task-ids (set (map :task-id (rm/active-tasks ctx)))
         active-project-ids (set (map :project-id (rm/active-projects ctx)))]
     (cond
       (not= review-id (:review-id review)) (conflict "Review is not active.")
       (not= :active (:status review)) (conflict "Review is not active.")
-      (not (set/subset? schemas/buckets (:reviewed-buckets review))) (conflict "All buckets must be reviewed.")
+      (not (set/subset? active-task-ids (:reviewed-task-ids review))) (conflict "All active tasks must be reviewed.")
       (not (set/subset? active-project-ids (:reviewed-project-ids review))) (conflict "All active projects must be reviewed.")
       :else
       {:command-result/events

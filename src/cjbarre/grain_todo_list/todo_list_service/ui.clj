@@ -7,21 +7,18 @@
 (defn shell [{:keys [title]} & body]
   (apply app-ui/app-shell {:title title} body))
 
-(defn home-page [{:keys [buckets deferred due-soon inactive projects review]}]
-  (shell {:title "GTD Workspace"}
+(defn home-page [{:keys [tasks due-soon inactive projects review]}]
+  (shell {:title "Todo Workspace"}
          (app-ui/action-error)
          [:div {:class "grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"}
           [:div {:class "grid gap-6"}
            (c/panel {:title "Workflow"
-                     :status "Current buckets for active work and parked ideas."}
-                    (tc/quick-add {:bucket :inbox})
-                    (for [bucket [:inbox :next :waiting :someday]]
-                      (with-meta
-                        (c/page-section {:title (get tc/bucket-labels bucket)
-                                         :count (count (get buckets bucket))
-                                         :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
-                                        (tc/task-list (get buckets bucket) "Nothing here." projects))
-                        {:key bucket})))]
+                     :status "Active work ordered in one list."}
+                    (tc/quick-add {})
+                    (c/page-section {:title "Active Tasks"
+                                     :count (count tasks)
+                                     :class "border-t border-base-content/10 pt-5"}
+                                    (tc/task-list tasks "No active tasks." projects)))]
           [:aside {:class "grid content-start gap-6"}
            (c/panel {:title "Projects"
                      :count (count projects)}
@@ -36,16 +33,15 @@
                                 "No active weekly review.")})]
            (c/panel {:title "Planning"
                      :status "Scheduled and recently closed work."}
-                    (tc/planning-summary {:deferred deferred
-                                         :due-soon due-soon
+                    (tc/planning-summary {:due-soon due-soon
                                          :inactive inactive
                                          :projects projects}))]]))
 
-(defn tasks-page [{:keys [bucket tasks projects]}]
-  (shell {:title (str (get tc/bucket-labels bucket "Tasks") " Tasks")}
+(defn tasks-page [{:keys [tasks projects]}]
+  (shell {:title "Tasks"}
          (app-ui/action-error)
-         [:div {:class "mb-6"} (tc/quick-add {:bucket bucket})]
-         (tc/task-list tasks "No tasks in this bucket." projects)))
+         [:div {:class "mb-6"} (tc/quick-add {})]
+         (tc/task-list tasks "No active tasks." projects)))
 
 (defn task-page [{:keys [task projects]}]
   (shell {:title (or (:title task) "Task")}
@@ -71,43 +67,38 @@
                (tc/project-editor project)
                (tc/task-count-row (:task-counts project))]
               (tc/project-actions project)]
-             [:p {:class "mt-4 text-sm text-base-content/70"}
+            [:p {:class "mt-4 text-sm text-base-content/70"}
               (str "Status: " (clojure.core/name (:status project)))])
             (when (= :active (:status project))
-              (tc/quick-add {:bucket :next :project-id (:project-id project)}))
+              (tc/quick-add {:project-id (:project-id project)}))
             (tc/task-list tasks "No active tasks for this project." projects)]
            [:div {:class "alert alert-warning"} "Project not found."])))
 
-(defn review-page [{:keys [buckets deferred due-soon inactive projects review-projects projects-without-next-action review]}]
+(defn review-page [{:keys [tasks due-soon inactive projects review-projects projects-without-next-action review]}]
   (shell {:title "Weekly Review"}
          (app-ui/action-error)
          [:section {:class "space-y-4"}
           (if (= :active (:status review))
-            (let [reviewed-buckets (:reviewed-buckets review)
+            (let [reviewed-task-ids (:reviewed-task-ids review)
                   reviewed-project-ids (:reviewed-project-ids review)
+                  review-tasks (or tasks [])
                   review-projects (or review-projects projects)
-                  all-buckets-reviewed? (every? reviewed-buckets [:inbox :next :waiting :someday])
+                  all-tasks-reviewed? (every? reviewed-task-ids (map :task-id review-tasks))
                   all-projects-reviewed? (every? reviewed-project-ids (map :project-id review-projects))
-                  review-complete? (and all-buckets-reviewed? all-projects-reviewed?)]
+                  review-complete? (and all-tasks-reviewed? all-projects-reviewed?)]
               [:div {:class "space-y-8"}
                (c/surface {:variant :card}
-                [:p {:class "text-sm font-medium"} "Review each bucket and active project."]
+                [:p {:class "text-sm font-medium"} "Review each active task and active project."]
                 [:div {:class "mt-3 flex flex-wrap gap-2 text-xs text-base-content/70"}
-                 (c/badge {:label (str (count reviewed-buckets) "/4 buckets reviewed")})
+                 (c/badge {:label (str (count reviewed-task-ids) "/" (count review-tasks) " tasks reviewed")})
                  (c/badge {:label (str (count reviewed-project-ids) "/" (count review-projects) " projects reviewed")})])
                [:div {:class "grid gap-8 xl:grid-cols-2"}
-                (for [bucket [:inbox :next :waiting :someday]
-                      :let [tasks (get buckets bucket)
-                            reviewed? (contains? reviewed-buckets bucket)]]
-                  (c/page-section {:title (get tc/bucket-labels bucket)
-                                   :count (count tasks)
-                                   :status (if reviewed? "This bucket has been reviewed." "Inspect these tasks, then mark the bucket reviewed.")
-                                   :action (tc/review-bucket-action review bucket reviewed?)}
-                                  (tc/task-summary-list tasks "Nothing here." projects)))]
+                (c/page-section {:title "Active Tasks"
+                                 :count (count review-tasks)
+                                 :status "Review each active task for relevance and next steps."}
+                                (tc/review-task-list review reviewed-task-ids review-tasks projects))]
                (c/page-section {:title "Due Soon" :count (count due-soon)}
                                (tc/task-summary-list due-soon "No due dates yet." projects))
-               (c/page-section {:title "Deferred" :count (count deferred)}
-                               (tc/task-summary-list deferred "No deferred tasks." projects))
                (c/page-section {:title "Projects Without Next Actions"
                                 :count (count projects-without-next-action)
                                 :status "These active projects may need a next action."}

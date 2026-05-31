@@ -7,7 +7,6 @@
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
             [cjbarre.grain-todo-list :as app]
             [cjbarre.grain-todo-list.todo-list-service.read-models :as todo-read-models]
-            [cjbarre.grain-todo-list.todo-list-service.schemas :as todo-schemas]
             [cjbarre.grain-todo-list.todo-list-service.ui :as ui]
             [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
             [cjbarre.grain-todo-list.ui.components :as c]
@@ -23,8 +22,6 @@
 (def review-id #uuid "00000000-0000-0000-0000-000000000301")
 (def now (OffsetDateTime/parse "2026-05-22T12:00:00Z"))
 (def later (OffsetDateTime/parse "2026-05-23T12:00:00Z"))
-(def later-string "2026-05-24T00:00:00Z")
-(def later-from-string (OffsetDateTime/parse later-string))
 
 (defn attr-key
   [k]
@@ -134,9 +131,7 @@
                     (command :todo/capture-task
                              {:task-id task-id
                               :title "Plan project"
-                              :bucket :next
-                              :due-at later
-                              :defer-until later})))
+                              :due-within-days 3})))
     (is (m/validate :todo/task-captured
                     {:event/id (random-uuid)
                      :event/timestamp now
@@ -144,18 +139,18 @@
                      :event/tags #{[:task task-id]}
                      :task-id task-id
                      :title "Plan project"
-                     :bucket :next
                      :status :active
-                     :order 1000})))
+                     :order 1000
+                     :due-within-days 3
+                     :due-within-set-at later})))
     (is (m/validate :todo/tasks
                     {task-id {:task-id task-id
                               :title "Projected task"
-                              :bucket :next
                               :status :active
                               :order 1000
                               :project-id project-id
-                              :due-at later
-                              :defer-until later}}))
+                              :due-within-days 3
+                              :due-within-set-at later}}))
     (is (m/validate :todo/projects
                     {project-id {:project-id project-id
                                  :name "Projected project"
@@ -170,37 +165,34 @@
                      :status :active
                      :started-at now
                      :reviewed-project-ids #{project-id}
-                     :reviewed-buckets #{:inbox :next}}))
+                     :reviewed-task-ids #{task-id}}))
     (is (m/validate :todo/tasks-page
-                    (query :todo/tasks-page {:bucket :inbox}))))
+                    (query :todo/tasks-page {}))))
   (testing "invalid payloads fail schema validation"
     (is (not (m/validate :todo/capture-task (command :todo/capture-task {:title "  "}))))
-    (is (not (m/validate :todo/capture-task (command :todo/capture-task {:title "x" :bucket :bad}))))
-    (is (not (m/validate :todo/set-task-due-at (command :todo/set-task-due-at {:task-id task-id :due-at "tomorrow"}))))
+    (is (not (m/validate :todo/set-task-due-within
+                         (command :todo/set-task-due-within {:task-id task-id :due-within-days -1}))))
     (is (not (m/validate :todo/tasks
                          {task-id {:task-id task-id
                                    :title "Missing status"
-                                   :bucket :next
                                    :order 1000}}))))
 
 (deftest pure-reducer-and-helper-tests
   (testing "task reducer is pure and reconstructs state from event maps"
-    (let [state (-> {}
+      (let [state (-> {}
                     (todo-read-models/tasks* {:event/type :todo/task-captured
                                               :task-id task-id
                                               :title "Inbox task"
-                                              :bucket :inbox
                                               :status :active
                                               :order 1000})
-                    (todo-read-models/tasks* {:event/type :todo/task-moved-to-bucket
+                    (todo-read-models/tasks* {:event/type :todo/task-reordered
                                               :task-id task-id
-                                              :bucket :next
                                               :order 2000})
                     (todo-read-models/tasks* {:event/type :todo/task-completed
                                               :task-id task-id}))]
       (is (m/validate :todo/tasks state))
       (is (= :completed (get-in state [task-id :status])))
-      (is (= :next (get-in state [task-id :bucket])))))
+      (is (= 2000 (get-in state [task-id :order])))))
   (testing "pure ordering helper sorts by order then title"
     (is (= [task-2-id task-id]
            (map :task-id
@@ -212,7 +204,7 @@
     (fn [ctx]
       (testing "commands go through Grain command processor and append events"
         (let [result (process! ctx :todo/capture-task
-                               {:task-id task-id :title "Capture task" :bucket :inbox})]
+                               {:task-id task-id :title "Capture task"})]
           (is (not (anomaly? result)))
           (is (event-of-type result :todo/task-captured))
           (is (= {:__toast "Task captured."} (:datastar/signals result)))
@@ -236,26 +228,18 @@
   (with-context
     (fn [ctx]
       (process! ctx :todo/capture-task {:task-id task-id :title "Clarify me"})
-      (testing "bucket movement, dates, and ordering go through commands"
-        (process! ctx :todo/move-task-to-bucket {:task-id task-id :bucket :next :order 50})
-        (process! ctx :todo/set-task-due-at {:task-id task-id :due-at later})
-        (process! ctx :todo/defer-task {:task-id task-id :defer-until later})
+      (testing "due-within and ordering go through commands"
+        (process! ctx :todo/reorder-task {:task-id task-id :order 50})
+        (process! ctx :todo/set-task-due-within {:task-id task-id :due-within-days 0})
         (let [task (get (project-tasks ctx) task-id)]
-          (is (= :next (:bucket task)))
           (is (= 50 (:order task)))
-          (is (= later (:due-at task)))
-          (is (= later (:defer-until task)))))
-      (testing "clear commands remove date metadata"
-        (process! ctx :todo/clear-task-due-at {:task-id task-id})
-        (process! ctx :todo/clear-task-defer-date {:task-id task-id})
-        (is (not (contains? (get (project-tasks ctx) task-id) :due-at)))
-        (is (not (contains? (get (project-tasks ctx) task-id) :defer-until))))
-      (testing "date commands accept parseable strings and emit OffsetDateTime values"
-        (process! ctx :todo/set-task-due-at {:task-id task-id :due-at later-string})
-        (process! ctx :todo/defer-task {:task-id task-id :defer-until later-string})
+          (is (= 0 (:due-within-days task)))
+          (is (instance? OffsetDateTime (:due-within-set-at task)))))
+      (testing "clear command removes due metadata"
+        (process! ctx :todo/clear-task-due-within {:task-id task-id})
         (let [task (get (project-tasks ctx) task-id)]
-          (is (= later-from-string (:due-at task)))
-          (is (= later-from-string (:defer-until task))))))))
+          (is (not (contains? task :due-within-days)))
+          (is (not (contains? task :due-within-set-at))))))))
 
 (deftest command-processor-projects-and-assignment
   (with-context
@@ -296,26 +280,23 @@
 (deftest grain-projection-helper-tests
   (with-context
     (fn [ctx]
-      (process! ctx :todo/capture-task {:task-id task-id :title "Visible" :bucket :next :order 20})
-      (process! ctx :todo/capture-task {:task-id task-2-id :title "Deferred" :bucket :next :defer-until later :order 10})
+      (process! ctx :todo/capture-task {:task-id task-id :title "Visible" :order 20})
+      (process! ctx :todo/capture-task {:task-id task-2-id :title "Soon" :due-within-days 0 :order 10})
       (testing "helpers read real Grain projections"
-        (is (= [task-id] (map :task-id (todo-read-models/tasks-for-bucket ctx :next now))))
-        (is (= [task-2-id] (map :task-id (todo-read-models/deferred-tasks ctx now))))
-        (is (= [task-2-id task-id]
-               (map :task-id (todo-read-models/tasks-for-bucket ctx :next (.plusDays later 1)))))))))
+        (is (= [task-2-id task-id] (map :task-id (todo-read-models/active-tasks ctx))))
+        (is (= [task-2-id] (map :task-id (todo-read-models/due-soon-tasks ctx))))))))
 
 (deftest query-processor-tests
   (with-context
     (fn [ctx]
-      (process! ctx :todo/capture-task {:task-id task-id :title "Render me" :bucket :inbox})
+      (process! ctx :todo/capture-task {:task-id task-id :title "Render me"})
       (testing "queries go through Grain query processor"
         (let [result (run-query ctx :todo/home-page {})]
           (is (not (anomaly? result)))
-          (is (= "Render me" (get-in result [:query/result :buckets :inbox 0 :title])))
+          (is (= "Render me" (get-in result [:query/result :tasks 0 :title])))
           (is (= :div#app (first (:datastar/hiccup result))))))
       (testing "path/query params are validated and decoded through query processor"
-        (let [result (run-query ctx :todo/tasks-page {:bucket :inbox})]
-          (is (= :inbox (:bucket (:query/result result))))
+        (let [result (run-query ctx :todo/tasks-page {})]
           (is (= [task-id] (map :task-id (:tasks (:query/result result)))))))
       (testing "task page query renders dedicated task editing surface"
         (let [result (run-query ctx :todo/task-page {:task-id task-id})
@@ -327,9 +308,8 @@
           (is (some #(has-attr? % :data-on:keydown) attrs))
           (is (some #(has-attr? % :data-on:change) attrs))
           (is (some #(= "Status" %) leaves))
-          (is (some #(= "Bucket" %) leaves))
           (is (some #(= "Project" %) leaves))
-          (is (some #(= "Schedule" %) leaves))
+          (is (some #(= "Due" %) leaves))
           (is (not (some #(= "Edit details" %) leaves)))))
       (testing "project page query includes task counts from projections"
         (process! ctx :todo/create-project {:project-id project-id :name "Counted project"})
@@ -338,16 +318,13 @@
           (is (= 1 (get-in result [:query/result :project :task-counts :active])))
           (is (= [task-id] (map :task-id (get-in result [:query/result :tasks]))))))
       (testing "review page query surfaces review material from real projections"
-        (let [future-date (.plusDays (OffsetDateTime/now) 1)]
-          (process! ctx :todo/capture-task {:task-id task-2-id
-                                            :title "Timed review item"
-                                            :bucket :waiting
-                                            :due-at future-date
-                                            :defer-until future-date}))
+        (process! ctx :todo/capture-task {:task-id task-2-id
+                                          :title "Timed review item"
+                                          :due-within-days 1})
         (let [result (run-query ctx :todo/review-page {})
               query-result (:query/result result)]
           (is (= "Timed review item" (get-in query-result [:due-soon 0 :title])))
-          (is (= "Timed review item" (get-in query-result [:deferred 0 :title])))
+          (is (= #{"Render me" "Timed review item"} (set (map :title (:tasks query-result)))))
           (is (= "Counted project" (get-in query-result [:review-projects 0 :name])))
           (is (empty? (:projects-without-next-action query-result)))))
       (testing "dev gallery query renders inert gallery Hiccup"
@@ -359,8 +336,9 @@
 (deftest weekly-review-command-and-projection-tests
   (with-context
     (fn [ctx]
-      (testing "review cannot complete before all buckets are reviewed"
+      (testing "review cannot complete before all active tasks and projects are reviewed"
         (process! ctx :todo/create-project {:project-id project-id :name "Review project"})
+        (process! ctx :todo/capture-task {:task-id task-id :title "Review task"})
         (process! ctx :todo/start-weekly-review {:review-id review-id})
         (is (= :active (:status (project-review ctx))))
         (is (m/validate :todo/weekly-review (project-review ctx)))
@@ -375,9 +353,8 @@
                (::anom/category (process! ctx :todo/mark-project-reviewed
                                           {:review-id review-id :project-id project-id}))))
         (process! ctx :todo/reactivate-project {:project-id project-id}))
-      (testing "review completes after all buckets and active projects are reviewed"
-        (doseq [bucket todo-schemas/buckets]
-          (process! ctx :todo/mark-bucket-reviewed {:review-id review-id :bucket bucket}))
+      (testing "review completes after all active tasks and active projects are reviewed"
+        (process! ctx :todo/mark-task-reviewed {:review-id review-id :task-id task-id})
         (process! ctx :todo/mark-project-reviewed {:review-id review-id :project-id project-id})
         (let [result (process! ctx :todo/complete-weekly-review {:review-id review-id})]
           (is (event-of-type result :todo/weekly-review-completed))
@@ -401,10 +378,10 @@
     (let [hiccup [:div
                   (tc/task-summary-row {:task-id task-id
                                         :title "Summary task"
-                                        :bucket :next
                                         :status :active
                                         :order 1000
-                                        :due-at later}
+                                        :due-within-days 1
+                                        :due-within-set-at later}
                                        [{:project-id project-id :name "Project"}])
                   (tc/project-summary-row {:project-id project-id
                                            :name "Summary project"
@@ -414,24 +391,18 @@
           attrs (filter map? leaves)]
       (is (some #(= "Summary task" %) leaves))
       (is (some #(= "Summary project" %) leaves))
-      (is (= 1 (count (filter #(= "Due 2026-05-23" %) leaves))))
+      (is (= 1 (count (filter #(= "Due within 1 day" %) leaves))))
       (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
       (is (some #(= (str "/project?project-id=" project-id) (:href %)) attrs))))
 
   (testing "pure Hiccup rendering can be tested without Grain processors"
-    (let [hiccup (ui/home-page {:buckets {:inbox [{:task-id task-id
-                                                   :title "UI task"
-                                                   :bucket :inbox
-                                                   :status :active
-                                                   :order 1000}]
-                                         :next []
-                                         :waiting []
-                                         :someday []}
-                                :deferred []
+    (let [hiccup (ui/home-page {:tasks [{:task-id task-id
+                                         :title "UI task"
+                                         :status :active
+                                         :order 1000}]
                                 :due-soon []
                                 :inactive [{:task-id task-2-id
                                             :title "Closed task"
-                                            :bucket :inbox
                                             :status :completed
                                             :order 2000}]
                                 :projects []
@@ -452,16 +423,16 @@
       (is (some #(= "/review" (:href %)) attrs))))
 
   (testing "review page exposes projection-derived progress without running processors"
-    (let [hiccup (ui/review-page {:buckets {:inbox []
-                                            :next [{:task-id task-id}]
-                                            :waiting []
-                                            :someday []}
-                                  :deferred []
+    (let [hiccup (ui/review-page {:tasks [{:task-id task-id
+                                           :title "Review task"
+                                           :status :active
+                                           :order 1000}]
                                   :due-soon [{:task-id task-id
                                               :title "Review due"
-                                              :bucket :next
                                               :status :active
-                                              :due-at later}]
+                                              :order 1000
+                                              :due-within-days 1
+                                              :due-within-set-at later}]
                                   :inactive []
                                   :projects [{:project-id project-id :name "UI project"}]
                                   :review-projects [{:project-id project-id
@@ -474,9 +445,9 @@
                                                                   :task-counts {:active 0 :completed 0}}]
                                   :review {:review-id review-id
                                            :status :active
-                                           :reviewed-buckets #{:inbox :next}
+                                           :reviewed-task-ids #{task-id}
                                            :reviewed-project-ids #{project-id}}})]
-      (is (some #(= "2/4 buckets reviewed" %) (tree-seq coll? seq hiccup)))
+      (is (some #(= "1/1 tasks reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "1/1 projects reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "Review due" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "Projects Without Next Actions" %) (tree-seq coll? seq hiccup)))))
@@ -501,13 +472,13 @@
       (is (some #(= "Vista Aero Minimal" %) leaves))
       (is (not (some #(= "Aero Glass Console" %) leaves)))
       (is (not (some #(= "Windows 7 Productivity" %) leaves)))
-      (is (some #(= "Draft inbox capture conventions" %) leaves))
+      (is (some #(= "Draft capture conventions" %) leaves))
       (is (some #(= "Launch reference workflow" %) leaves))
       (is (some #(= "Forms and Alerts" %) leaves))
       (is (some #(= "Unable to save changes." %) leaves))
       (is (some #(= "Task Detail and Editing" %) leaves))
       (is (not (some #(= "Rename" %) leaves)))
-      (is (some #(= "Schedule" %) leaves))
+      (is (some #(= "Due" %) leaves))
       (is (some #(= "Task action states" %) leaves))
       (is (some #(= "Project action states" %) leaves))
       (is (not (some #(= "Edit project" %) leaves)))
@@ -520,8 +491,7 @@
       (is (not (some #(and (string? %) (string/includes? % "@post('/actions')")) leaves)))))
 
   (testing "home command forms scope signals so sibling forms cannot clobber commands"
-    (let [hiccup (ui/home-page {:buckets {:inbox [] :next [] :waiting [] :someday []}
-                                :deferred []
+    (let [hiccup (ui/home-page {:tasks []
                                 :due-soon []
                                 :inactive []
                                 :projects []
@@ -540,12 +510,11 @@
   (testing "cards stay minimal and task page owns the edit UI"
     (let [task {:task-id task-id
                 :title "Minimal card"
-                :bucket :next
                 :status :active
                 :order 1000
                 :project-id project-id
-                :due-at later
-                :defer-until later}
+                :due-within-days 1
+                :due-within-set-at later}
           card-leaves (tree-seq coll? seq (tc/task-card task []))
           card-attrs (filter map? card-leaves)
           page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
@@ -554,10 +523,9 @@
       (is (some #(= "Minimal card" %) card-leaves))
       (is (not (some #(= "open" %) card-leaves)))
       (is (some #(= (str "/task?task-id=" task-id) (:href %)) card-attrs))
-      (is (some #(= "Next" %) card-leaves))
       (is (not (some #(= "active" %) card-leaves)))
       (is (some #(= "Project" %) card-leaves))
-      (is (some #(= "Due 2026-05-23" %) card-leaves))
+      (is (some #(= "Due within 1 day" %) card-leaves))
       (is (not (some #(= "done" %) card-leaves)))
       (is (some #(= "Complete task" (:aria-label %)) card-attrs))
       (is (some #(and (has-attr? % :data-on:click)
@@ -569,18 +537,16 @@
       (is (some #(= "Complete task" %) page-leaves))
       (is (some #(= "Cancel task" %) page-leaves))
       (is (not (some #(= "canceled" %) page-leaves)))
-      (is (some #(= "Bucket" %) page-leaves))
-      (is (some #(= "Schedule" %) page-leaves))
+      (is (not (some #(= "Bucket" %) page-leaves)))
+      (is (some #(= "Due" %) page-leaves))
       (is (some #(has-attr? % :data-on:blur) page-attrs))
       (is (some #(has-attr? % :data-on:change) page-attrs))
       (is (some #(has-attr? % :data-on:keydown) page-attrs))
       (doseq [command-name ["todo/rename-task"
                             "todo/assign-task-to-project"
                             "todo/remove-task-from-project"
-                            "todo/set-task-due-at"
-                            "todo/clear-task-due-at"
-                            "todo/defer-task"
-                            "todo/clear-task-defer-date"]]
+                            "todo/set-task-due-within"
+                            "todo/clear-task-due-within"]]
         (is (some #(string/includes? % command-name) page-attr-values)
             command-name))
       (is (not (some #(= "Edit details" %) page-leaves))))))

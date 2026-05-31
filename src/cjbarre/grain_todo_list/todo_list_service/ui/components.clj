@@ -4,12 +4,6 @@
              :refer [action-button badge badge-row chip chip-row empty-state form-class metadata-text page-section page-title panel product-label section-title select-field signal-suffix status-action surface surface-class text-field]]
             [clojure.string :as string]))
 
-(def bucket-labels
-  {:inbox "Inbox"
-   :next "Next"
-   :waiting "Waiting"
-   :someday "Someday"})
-
 (defn date-value
   [value]
   (some-> value str (subs 0 10)))
@@ -33,31 +27,40 @@
                   :mark :cancel
                   :danger? true
                   :on-click-attrs on-click-attrs}))
-(defn date-field
-  [{:keys [label signal-name value command clear-command id-value value-key]}]
-  [:label {:class "inline-date"}
-   [:span label]
-   [:input (merge {:class "inline-date-input"
-                   :aria-label label
-                   :type "date"}
-                  (ds/bind signal-name)
-                  (ds/on-command
-                   :change
-                   (cond-> {:let [['selected (ds/expr (ds/signal signal-name))]]
-                            :when (ds/expr "selected")
-                            :then {:command command
-                                   :extra [[:task-id id-value]
-                                           [value-key (ds/expr "new Date(selected + 'T00:00:00').toISOString()")]]}}
-                     value
-                     (assoc :else {:command clear-command
-                                   :extra [[:task-id id-value]]}))))]])
-(defn quick-add [{:keys [bucket project-id]}]
+(defn due-within-field
+  [{:keys [signal-name value id-value]}]
+  (let [input-id (str signal-name "-input")]
+    [:div {:class "due-within-control"}
+     [:label {:class "due-within-label" :for input-id} "Due within"]
+     [:div {:class "due-within-input-wrap"}
+      [:input (merge {:id input-id
+                      :name "due-within-days"
+                      :class "due-within-input"
+                      :aria-label "Due within days"
+                      :type "number"
+                      :min "0"
+                      :step "1"
+                      :inputmode "numeric"
+                      :placeholder "0"}
+                     (ds/bind signal-name)
+                     (ds/on-command
+                      :change
+                      (cond-> {:let [['raw (ds/expr (ds/signal signal-name))]]
+                               :when (ds/expr "raw !== '' && raw !== null")
+                               :then {:command :todo/set-task-due-within
+                                      :extra [[:task-id id-value]
+                                              [:due-within-days (ds/expr "Number(raw)")]]}}
+                        value
+                        (assoc :else {:command :todo/clear-task-due-within
+                                      :extra [[:task-id id-value]]}))))]
+      [:span {:class "due-within-unit"} "days"]]]))
+
+(defn quick-add [{:keys [project-id]}]
   (ds/with-scope (str "quick-add-" (or project-id "global"))
     (form-class
      (ds/action-form
       {:command :todo/capture-task
-       :fields (cond-> {:title ""
-                        :bucket (name (or bucket :inbox))}
+       :fields (cond-> {:title ""}
                  project-id (assoc :project-id project-id))
        :reset-on-success? true}
       [:input (merge {:class "input input-bordered min-w-0 flex-1"
@@ -65,10 +68,6 @@
                       :placeholder "Capture a task"
                       :required true}
                      (ds/bind :title))]
-      [:select (merge {:class "select select-bordered sm:w-40" :aria-label "Bucket"}
-                      (ds/bind :bucket))
-       (for [[value label] bucket-labels]
-         [:option {:key value :value (name value)} label])]
       (action-button {:label "Add" :class "btn-primary" :type "submit"}))
      (surface-class :form nil))))
 
@@ -106,16 +105,6 @@
         (chip {:label "Reactivate"
                :on-click-attrs (ds/on-click-command :todo/reactivate-task
                                                {:extra {:task-id task-id}})}))))])
-
-(defn bucket-move-controls [{:keys [task-id bucket]}]
-  (into (chip-row)
-        (for [[value label] bucket-labels]
-          (chip {:label label
-                 :active? (= value bucket)
-                 :disabled? (= value bucket)
-                 :on-click-attrs (ds/on-click-command :todo/move-task-to-bucket
-                                                 {:extra {:task-id task-id
-                                                          :bucket (name value)}})}))))
 
 (defn task-project-name
   [{:keys [project-id]} projects]
@@ -168,49 +157,42 @@
      (when (not= :active status)
        [:p {:class "text-sm text-base-content/70"} (or (task-project-name task projects) "No project")]))))
 
-(defn task-schedule-panel [{:keys [task-id due-at defer-until status]}]
+(defn due-within-label
+  [{:keys [due-within-days]}]
+  (when (some? due-within-days)
+    (if (zero? due-within-days)
+      "Due now"
+      (str "Due within " due-within-days " day" (when (not= 1 due-within-days) "s")))))
+
+(defn task-schedule-panel [{:keys [task-id due-within-days due-within-set-at status] :as task}]
   (let [suffix (signal-suffix task-id)
-        due-signal (str "due_" suffix)
-        defer-signal (str "defer_" suffix)]
+        due-signal (str "due_within_" suffix)]
     (task-sidebar-section
-     "Schedule"
+     "Due"
      (when (= :active status)
        [:div {:class "grid gap-3"
-              :data-signals (ds/signals {due-signal (date-value due-at)
-                                         defer-signal (date-value defer-until)})}
-        (date-field {:label "Due"
-                     :signal-name due-signal
-                     :value (date-value due-at)
-                     :command "todo/set-task-due-at"
-                     :clear-command "todo/clear-task-due-at"
-                     :id-value task-id
-                     :value-key :due-at})
-        (date-field {:label "Defer"
-                     :signal-name defer-signal
-                     :value (date-value defer-until)
-                     :command "todo/defer-task"
-                     :clear-command "todo/clear-task-defer-date"
-                     :id-value task-id
-                     :value-key :defer-until})])
+              :data-signals (ds/signals {due-signal (or due-within-days "")})}
+        (due-within-field {:signal-name due-signal
+                           :value due-within-days
+                           :id-value task-id})])
      (when (not= :active status)
-       [:div {:class "grid grid-cols-2 gap-3 text-sm"}
+       [:div {:class "grid gap-3 text-sm"}
         [:div
-         [:p {:class "text-xs font-medium text-base-content/60"} "Due"]
-         [:p {:class "mt-1"} (or (date-value due-at) "None")]]
-        [:div
-         [:p {:class "text-xs font-medium text-base-content/60"} "Deferred"]
-         [:p {:class "mt-1"} (or (date-value defer-until) "None")]]]))))
+         [:p {:class "text-xs font-medium text-base-content/60"} "Due within"]
+         [:p {:class "mt-1"} (or (due-within-label task) "None")]]
+        (when due-within-set-at
+          [:div
+           [:p {:class "text-xs font-medium text-base-content/60"} "Set"]
+           [:p {:class "mt-1"} (date-value due-within-set-at)]])]))))
 
 (defn task-badges
-  [{:keys [bucket project-id status] :as task} projects]
-  [{:key :bucket :label (when bucket (get bucket-labels bucket (name bucket)))}
-   {:key :status :label (when (and status (not= :active status)) (name status))}
+  [{:keys [project-id status] :as task} projects]
+  [{:key :status :label (when (and status (not= :active status)) (name status))}
    {:key :project :label (when project-id (or (task-project-name task projects) "Project")) :class "status-token-blue"}])
 
 (defn task-schedule-badges
-  [{:keys [due-at defer-until]}]
-  [{:key :due-at :label (when due-at (str "Due " (date-value due-at))) :class "status-token-warning"}
-   {:key :defer-until :label (when defer-until (str "Deferred " (date-value defer-until))) :class "status-token-schedule"}])
+  [task]
+  [{:key :due-within :label (due-within-label task) :class "status-token-warning"}])
 
 (def clickable-content-class
   "block min-w-0 flex-1 rounded-lg -m-2 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary hover:bg-base-100/45")
@@ -271,11 +253,6 @@
        (with-meta (task-card task projects) {:key (:task-id task)}))]
     (empty-state empty-message))))
 
-(defn bucket-section [bucket tasks projects]
-  (page-section {:title (get bucket-labels bucket)
-                 :count (count tasks)}
-                (task-list tasks "Nothing here." projects)))
-
 (defn due-soon-list [tasks projects]
   (if (seq tasks)
     (surface {:variant :list}
@@ -311,13 +288,8 @@
      [:p {:class "mt-2 text-sm text-base-content/60"} empty-message])])
 
 (defn planning-summary
-  [{:keys [deferred due-soon inactive projects]}]
+  [{:keys [due-soon inactive projects]}]
   [:div {:class "grid gap-3"}
-   (planning-summary-row {:label "Deferred"
-                          :count (count deferred)
-                          :items deferred
-                          :empty-message "No deferred tasks."
-                          :projects projects})
    (planning-summary-row {:label "Due Soon"
                           :count (count due-soon)
                           :items due-soon
@@ -401,24 +373,12 @@
               (badge-row (task-badges task projects))]
              [:div {:class "grid gap-4 border-t border-base-content/10 pt-4 md:grid-cols-3"}
               [:div
-               [:p {:class "text-xs font-medium text-base-content/60"} "Bucket"]
-               [:p {:class "mt-1 text-sm"} (get bucket-labels (:bucket task) (some-> task :bucket name))]]
-              [:div
                [:p {:class "text-xs font-medium text-base-content/60"} "Project"]
                [:p {:class "mt-1 text-sm"} (or (task-project-name task projects) "None")]]
               [:div
                [:p {:class "text-xs font-medium text-base-content/60"} "Timing"]
                [:p {:class "mt-1 text-sm"}
-                (or (when (:due-at task) (str "Due " (date-value (:due-at task))))
-                    (when (:defer-until task) (str "Deferred " (date-value (:defer-until task))))
-                    "None")]]]
-             [:div {:class "border-t border-base-content/10 pt-4"}
-              [:h3 {:class "mb-3 text-sm font-semibold"} "Bucket"]
-              (when (= :active (:status task))
-                (bucket-move-controls task))
-              (when (not= :active (:status task))
-                [:p {:class "text-sm text-base-content/70"}
-                 (get bucket-labels (:bucket task) (some-> task :bucket name))])]])
+                (or (due-within-label task) "None")]]]])
    (surface {:tag :aside :variant :card}
             [:div {:class "space-y-4"}
              (task-sidebar-section
@@ -441,13 +401,24 @@
                (project-summary-row project)))
     (empty-state empty-message)))
 
-(defn review-bucket-action [review bucket reviewed?]
-  (chip {:label (if reviewed? "reviewed" "review")
-         :active? reviewed?
-         :disabled? reviewed?
-         :on-click-attrs (ds/on-click-command :todo/mark-bucket-reviewed
-                                         {:extra {:review-id (:review-id review)
-                                                  :bucket (name bucket)}})}))
+(defn review-task-row [review reviewed-task-ids task projects]
+  (let [reviewed? (contains? reviewed-task-ids (:task-id task))]
+    [:div {:key (:task-id task)
+           :class "grid gap-2 p-3 lg:grid-cols-[1fr_auto] lg:items-center"}
+     (task-summary-row task projects)
+     (chip {:label (if reviewed? "reviewed" "review")
+            :active? reviewed?
+            :disabled? reviewed?
+            :on-click-attrs (ds/on-click-command :todo/mark-task-reviewed
+                                            {:extra {:review-id (:review-id review)
+                                                     :task-id (:task-id task)}})})]))
+
+(defn review-task-list [review reviewed-task-ids tasks projects]
+  (if (seq tasks)
+    (surface {:variant :list}
+             (for [task tasks]
+               (review-task-row review reviewed-task-ids task projects)))
+    (empty-state "No active tasks to review.")))
 
 (defn review-project-row [review reviewed-project-ids project]
   (let [reviewed? (contains? reviewed-project-ids (:project-id project))]
@@ -487,21 +458,18 @@
 
 (def gallery-tasks
   [{:task-id gallery-task-id
-    :title "Draft inbox capture conventions"
-    :bucket :inbox
+    :title "Draft capture conventions"
     :status :active
     :order 1000
     :project-id gallery-project-id
-    :due-at "2026-06-03T12:00:00Z"}
+    :due-within-days 3
+    :due-within-set-at "2026-06-01T12:00:00Z"}
    {:task-id gallery-task-2-id
-    :title "Wait for design review notes"
-    :bucket :waiting
+    :title "Review design notes"
     :status :active
-    :order 2000
-    :defer-until "2026-06-07T12:00:00Z"}
+    :order 2000}
    {:task-id gallery-task-3-id
     :title "Confirm weekly review checklist"
-    :bucket :next
     :status :completed
     :order 3000
     :project-id gallery-project-2-id}])
@@ -509,20 +477,18 @@
 (def gallery-review
   {:review-id gallery-review-id
    :status :active
-   :reviewed-buckets #{:inbox :next}
+   :reviewed-task-ids #{gallery-task-id}
    :reviewed-project-ids #{gallery-project-id}})
 
 (def gallery-canceled-task
   {:task-id #uuid "00000000-0000-0000-0000-000000000907"
    :title "Canceled reference task"
-   :bucket :someday
    :status :canceled
    :order 4000})
 
 (def gallery-archived-task
   {:task-id #uuid "00000000-0000-0000-0000-000000000908"
    :title "Archived reference task"
-   :bucket :someday
    :status :archived
    :order 5000})
 
@@ -590,7 +556,7 @@
         [active-project] gallery-projects
         title-signal "fundamental_title"
         project-signal "fundamental_project"
-        due-signal "fundamental_due"]
+        due-signal "fundamental_due_within"]
     (surface
      {:tag :section :variant :gallery :class "gallery-vista"}
      (surface
@@ -632,7 +598,7 @@
         "Inputs"
         [:div {:data-signals (ds/signals {title-signal "Inline title"
                                           project-signal ""
-                                          due-signal "2026-06-03"})}
+                                          due-signal "3"})}
          (inert (text-field {:class ""
                              :command "todo/rename-task"
                              :id-key :task-id
@@ -645,13 +611,9 @@
                               :aria-label "Project"}
                              [:option {:value ""} "No project"]
                              [:option {:value gallery-project-id} "Launch reference workflow"]))
-        (inert (date-field {:label "Due"
-                            :signal-name due-signal
-                            :value "2026-06-03"
-                            :command "todo/set-task-due-at"
-                            :clear-command "todo/clear-task-due-at"
-                            :id-value gallery-task-id
-                            :value-key :due-at})))
+        (inert (due-within-field {:signal-name due-signal
+                                  :value 3
+                                  :id-value gallery-task-id})))
        (fundamental-tray
         "Actions"
         [:div {:class "flex flex-wrap gap-2"}
@@ -713,24 +675,21 @@
      [:div {:class "flex flex-wrap items-center justify-between gap-3"}
       [:span {:class "text-sm text-base-content/70"} "Reviewed"]
       [:div {:class "flex flex-wrap gap-2"}
-       (review-bucket-action gallery-review :inbox true)
-       (review-bucket-action gallery-review :waiting false)]]])])
+       (chip {:label "reviewed" :active? true :disabled? true})
+       (chip {:label "review"})]]])])
 
 (defn gallery-home-panel-sample
   [active-task active-project]
   [:div {:class "grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]"}
    (panel {:title "Workflow"
-           :status "Panelized bucket groups keep cards from floating on the glass."
+           :status "Active work stays in one ordered list."
            :count 1}
-          (quick-add {:bucket :inbox})
-          (page-section {:title "Inbox"
+          (quick-add {})
+          (page-section {:title "Active Tasks"
                          :count 1
                          :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
                         (task-list [active-task] "Nothing here." gallery-projects))
-          (page-section {:title "Next"
-                         :count 0
-                         :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
-                        (task-list [] "Nothing here." gallery-projects)))
+          (task-list [] "No active tasks."))
    [:div {:class "grid gap-4 content-start"}
     (panel {:title "Projects"
             :count 1}
@@ -739,9 +698,8 @@
     (panel {:title "Weekly Review"
             :status "No active weekly review."})
     (panel {:title "Planning"
-            :status "Scheduled and recently closed work."}
-           (planning-summary {:deferred []
-                              :due-soon [active-task]
+           :status "Scheduled and recently closed work."}
+           (planning-summary {:due-soon [active-task]
                               :inactive []
                               :projects gallery-projects}))]])
 
@@ -762,8 +720,8 @@
                        :status "Capture forms, project creation, and transient error messaging."}
                       [:div {:class "grid gap-4 lg:grid-cols-[1.3fr_0.9fr]"}
                        [:div {:class "grid gap-4"}
-                        (inert (quick-add {:bucket :inbox}))
-                        (inert (quick-add {:bucket :next :project-id gallery-project-id}))]
+                        (inert (quick-add {}))
+                        (inert (quick-add {:project-id gallery-project-id}))]
                        [:div {:class "grid gap-4"}
                         (inert (project-add))
                         (gallery-alert-sample)]])
@@ -776,14 +734,14 @@
                         (when-not compact?
                           (inert (task-card waiting-task gallery-projects)))
                         (inert (task-card completed-task gallery-projects))
-                        (inert (task-summary-list gallery-tasks "No tasks in this bucket." gallery-projects))]
+                        (inert (task-summary-list gallery-tasks "No active tasks." gallery-projects))]
                        [:div {:class "space-y-4"}
                         (inert (due-soon-list [active-task] gallery-projects))
                         (task-list [] "No completed or canceled tasks." gallery-projects)
                         (due-soon-list [] gallery-projects)]])
 
      (gallery-section {:title "Task Detail and Editing"
-                       :status "Dedicated task detail page surfaces, bucket movement, and edit controls."}
+                       :status "Dedicated task detail page surfaces and edit controls."}
                       [:div {:class "grid gap-4 xl:grid-cols-2"}
                        (inert (task-detail-panel active-task gallery-projects))
                        [:div {:class "space-y-4"}
@@ -803,9 +761,13 @@
                                                      "No projects need attention."))]])
 
      (gallery-section {:title "Weekly Review"
-                       :status "Review progress, reviewed and pending actions, project review rows, and review empty states."}
+                       :status "Review progress, task review rows, project review rows, and review empty states."}
                       [:div {:class "grid gap-4 xl:grid-cols-2"}
                        [:div {:class "space-y-4"}
+                        (inert (review-task-list gallery-review
+                                                 (:reviewed-task-ids gallery-review)
+                                                 gallery-tasks
+                                                 gallery-projects))
                         (inert (review-project-list gallery-review
                                                     (:reviewed-project-ids gallery-review)
                                                     gallery-projects))
@@ -813,10 +775,11 @@
                        (page-section {:title "Review Controls"
                                       :count 4
                                       :status "Review each active project for stale outcomes and next actions."
-                                      :action (inert (review-bucket-action gallery-review :waiting false))}
-                                     [:div {:class "flex flex-wrap gap-2"}
-                                      (inert (review-bucket-action gallery-review :inbox true))
-                                      (inert (review-bucket-action gallery-review :waiting false))]
+                                      :action (inert (chip {:label "review"}))}
+                                     (inert (review-task-list gallery-review
+                                                              (:reviewed-task-ids gallery-review)
+                                                              gallery-tasks
+                                                              gallery-projects))
                                      (empty-state "Every active project has an active task."))])]))
 
 (def gallery-variants

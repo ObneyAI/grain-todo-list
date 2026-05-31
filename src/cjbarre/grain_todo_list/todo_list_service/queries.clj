@@ -1,13 +1,11 @@
 (ns cjbarre.grain-todo-list.todo-list-service.queries
   (:require [ai.obney.grain.query-processor.interface :refer [defquery]]
             [cjbarre.grain-todo-list.todo-list-service.read-models :as rm]
-            [cjbarre.grain-todo-list.todo-list-service.schemas :as schemas]
             [cjbarre.grain-todo-list.todo-list-service.ui :as ui]))
 
 (defn workspace-data
   [ctx]
-  {:buckets (into {} (map (fn [bucket] [bucket (vec (rm/tasks-for-bucket ctx bucket))]) schemas/buckets))
-   :deferred (vec (rm/deferred-tasks ctx))
+  {:tasks (vec (rm/active-tasks ctx))
    :due-soon (vec (rm/due-soon-tasks ctx))
    :inactive (vec (rm/inactive-tasks ctx))
    :projects (vec (rm/active-projects ctx))
@@ -34,11 +32,10 @@
    :datastar/path "/tasks"
    :datastar/title "Tasks"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
-  [{{:keys [bucket]} :query :as ctx}]
-  (let [bucket (or bucket :inbox)
-        tasks (vec (rm/tasks-for-bucket ctx bucket))]
-    {:query/result {:bucket bucket :tasks tasks :projects (vec (rm/active-projects ctx))}
-     :datastar/hiccup (ui/tasks-page {:bucket bucket :tasks tasks :projects (vec (rm/active-projects ctx))})}))
+  [ctx]
+  (let [tasks (vec (rm/active-tasks ctx))]
+    {:query/result {:tasks tasks :projects (vec (rm/active-projects ctx))}
+     :datastar/hiccup (ui/tasks-page {:tasks tasks :projects (vec (rm/active-projects ctx))})}))
 
 (defquery :todo task-page
   {:authorized? (constantly true)
