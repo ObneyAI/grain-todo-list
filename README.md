@@ -4,10 +4,11 @@ A small Grain + Datastar todo app experiment.
 
 ![Grain Todo home screen](doc/screenshots/home.png)
 
-The project intentionally avoids a Polylith layout. Application code should stay small and local:
+The project intentionally avoids a Polylith layout while keeping the todo domain organized as one local service component:
 
-- `src/cjbarre/grain_todo_list.clj` - backend, Integrant system, Grain primitives
-- `src/cjbarre/grain_todo_list/ui.clj` - pure Hiccup UI
+- `src/cjbarre/grain_todo_list.clj` - Integrant system, routes, app lifecycle
+- `src/cjbarre/grain_todo_list/todo_list_service/` - todo schemas, read models, commands, queries, processors, periodic tasks, and page UI
+- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable Hiccup UI elements and Datastar v2 DSL usage
 - `css/main.css` - Tailwind/DaisyUI input
 - `resources/public/css/main.css` - generated CSS served by the app
 
@@ -84,7 +85,11 @@ In another terminal:
 Then work from the REPL. Reload namespaces after edits and restart the Integrant system as needed:
 
 ```clojure
-(require 'cjbarre.grain-todo-list.ui :reload)
+(require 'cjbarre.grain-todo-list.todo-list-service.schemas :reload)
+(require 'cjbarre.grain-todo-list.todo-list-service.read-models :reload)
+(require 'cjbarre.grain-todo-list.todo-list-service.commands :reload)
+(require 'cjbarre.grain-todo-list.todo-list-service.queries :reload)
+(require 'cjbarre.grain-todo-list.todo-list-service.ui :reload)
 (require 'cjbarre.grain-todo-list :reload)
 
 (app/stop system)

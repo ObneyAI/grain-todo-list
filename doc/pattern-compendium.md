@@ -1,12 +1,18 @@
 # Pattern Compendium
 
-This project is intentionally small. Build the app in a minimal Clojure layout rather than a Polylith layout.
+This project is intentionally small. Build the app in a minimal Clojure layout rather than a Polylith layout, but keep the todo domain organized as one local service component.
 
-The goal is to keep application code in a few obvious files:
+The goal is to keep application code in a few obvious places:
 
-- `src/cjbarre/grain_todo_list.clj` - backend, Integrant system, domain logic, commands, read models, queries, routes
-- `src/cjbarre/grain_todo_list/ui.clj` - page-level pure Hiccup composition
-- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable UI components and Datastar v2 DSL usage
+- `src/cjbarre/grain_todo_list.clj` - application composition, Integrant system, routes, lifecycle
+- `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` - schema constants, validation helpers, and `defschemas`
+- `src/cjbarre/grain_todo_list/todo_list_service/read_models.clj` - read model reducers, `defreadmodel`s, and projection helpers
+- `src/cjbarre/grain_todo_list/todo_list_service/commands.clj` - command helpers and `defcommand`s
+- `src/cjbarre/grain_todo_list/todo_list_service/queries.clj` - query data assembly and `defquery`s
+- `src/cjbarre/grain_todo_list/todo_list_service/ui.clj` - page-level todo UI composition
+- `src/cjbarre/grain_todo_list/todo_list_service/todo_processors.clj` - todo processor lifecycle
+- `src/cjbarre/grain_todo_list/todo_list_service/periodic_tasks.clj` - periodic trigger lifecycle
+- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable UI elements and Datastar v2 DSL usage
 
 Supporting files:
 
@@ -15,7 +21,7 @@ Supporting files:
 - `deps.edn` - Clojure classpath and dependencies
 - `package.json` - CSS build scripts
 
-No `bases/`, `components/`, `interface.clj`, or service bricks in this app. If a pattern from Grain examples mentions those directories, translate it into the files above.
+No `bases/`, Polylith `components/`, `interface.clj`, or service bricks in this app. If a pattern from Grain examples mentions those directories, translate it into the local `todo_list_service` namespaces above.
 
 ---
 
@@ -40,7 +46,7 @@ obneyai/grain-datastar-v2
  :deps/root "projects/grain-datastar-v2"}
 ```
 
-Backend namespace pattern:
+Application namespace pattern:
 
 ```clojure
 (ns cjbarre.grain-todo-list
@@ -61,10 +67,15 @@ Backend namespace pattern:
             [ai.obney.grain.command-request-handler-v2.interface :as crh]
             [ai.obney.grain.query-request-handler.interface :as qrh]
             [ai.obney.grain.webserver.interface :as ws]
-            [cjbarre.grain-todo-list.ui :as ui]))
+            [cjbarre.grain-todo-list.todo-list-service.commands]
+            [cjbarre.grain-todo-list.todo-list-service.periodic-tasks :as periodic-tasks]
+            [cjbarre.grain-todo-list.todo-list-service.queries]
+            [cjbarre.grain-todo-list.todo-list-service.read-models]
+            [cjbarre.grain-todo-list.todo-list-service.schemas]
+            [cjbarre.grain-todo-list.todo-list-service.todo-processors :as todo-processors]))
 ```
 
-UI components that emit Datastar attributes should require the same v2 interface:
+Service namespaces require only the Grain interfaces they use. UI components that emit Datastar attributes should require the same v2 interface:
 
 ```clojure
 (ns cjbarre.grain-todo-list.ui.components
@@ -75,44 +86,37 @@ UI components that emit Datastar attributes should require the same v2 interface
 
 ## File Responsibilities
 
-### Backend File
+### App File
 
-Use `src/cjbarre/grain_todo_list.clj` for backend concerns:
+Use `src/cjbarre/grain_todo_list.clj` only for app composition:
 
 - Integrant system map
-- lifecycle functions: `start`, `stop`
-- command handlers
-- query handlers
-- read model definitions and helpers
-- todo processors
-- periodic task handlers
+- app-level lifecycle functions: `start`, `stop`
+- event store, pubsub, cache, context, route, and webserver keys
 - route assembly
-- small backend utilities
+- delegation to service processor and periodic-task lifecycle functions
+- requiring service namespaces so schemas, read models, commands, and queries register
 
-Keep the file organized with comment sections instead of splitting into many namespaces too early.
+Do not put todo domain logic, command handlers, query handlers, schemas, read models, or page rendering in the root app namespace.
 
-Suggested order:
+### Service Files
 
-```clojure
-;; Constants
-;; Event helpers
-;; Read models
-;; Command handlers
-;; Query handlers
-;; Todo processors
-;; Periodic tasks
-;; Integrant system
-;; Integrant init/halt methods
-;; Lifecycle functions
-;; REPL helpers
-```
+Use `src/cjbarre/grain_todo_list/todo_list_service/` for todo domain behavior:
 
-### Page UI File
+- `schemas.clj` owns enum constants, validation helpers, and `defschemas`.
+- `read_models.clj` owns event-type sets, reducer multimethods, `defreadmodel`s, and projection helper functions.
+- `commands.clj` owns anomaly helpers, command helper functions, and `defcommand`s.
+- `queries.clj` owns query data assembly and `defquery`s.
+- `ui.clj` owns pure page-level todo Hiccup composition.
+- `todo_processors.clj` owns todo processor start/stop functions.
+- `periodic_tasks.clj` owns periodic trigger start/stop functions.
 
-Use `src/cjbarre/grain_todo_list/ui.clj` for page-level UI concerns:
+### Service UI File
+
+Use `src/cjbarre/grain_todo_list/todo_list_service/ui.clj` for page-level todo UI concerns:
 
 - pure Hiccup page functions
-- page composition from reusable components
+- page composition from reusable UI elements
 - route-specific page shells
 - light formatting that is only used by page composition
 
@@ -121,7 +125,7 @@ UI functions should be pure. They receive data and return Hiccup. They should no
 Example:
 
 ```clojure
-(ns cjbarre.grain-todo-list.ui
+(ns cjbarre.grain-todo-list.todo-list-service.ui
   (:require [cjbarre.grain-todo-list.ui.components :as c]))
 
 (defn home-page
@@ -193,7 +197,7 @@ Because `deps.edn` includes `resources` on the classpath, files under `resources
 
 ### Integrant System
 
-The current system map lives directly in `cjbarre.grain-todo-list/system`.
+The system map lives directly in `cjbarre.grain-todo-list/system`.
 
 Keep additions local and explicit:
 
@@ -216,7 +220,7 @@ Keep additions local and explicit:
                 :http/join? false}})
 ```
 
-Prefer adding small keys to this map over creating a new subsystem file.
+Prefer adding app-level wiring keys to this map. Put todo domain behavior in `todo-list-service` namespaces and call it from Integrant methods.
 
 ### Routes
 
@@ -242,12 +246,16 @@ Use `ds/routes` for Datastar query pages and `ds/action-route` for the standard 
 
 ### Command Handlers
 
-Commands should live in the backend file under a command section.
+Commands live in `cjbarre.grain-todo-list.todo-list-service.commands`.
 
 Use Grain command definitions from the command processor namespace. Keep each command small:
 
 ```clojure
-;; Command handlers
+(ns cjbarre.grain-todo-list.todo-list-service.commands
+  (:require [ai.obney.grain.command-processor-v2.interface :refer [defcommand]]
+            [ai.obney.grain.event-store-v3.interface :refer [->event]]
+            [cjbarre.grain-todo-list.todo-list-service.read-models :as rm]
+            [cognitect.anomalies :as anom]))
 
 (defcommand :todo capture-task
   {:authorized? (constantly true)}
@@ -285,12 +293,13 @@ Use event tags consistently:
 
 ### Read Models
 
-Read models and read helpers also live in the backend file.
+Read models and read helpers live in `cjbarre.grain-todo-list.todo-list-service.read-models`.
 
 Pattern:
 
 ```clojure
-;; Read models
+(ns cjbarre.grain-todo-list.todo-list-service.read-models
+  (:require [ai.obney.grain.read-model-processor-v2.interface :as rmp :refer [defreadmodel]]))
 
 (def todo-event-types
   #{:todo/task-captured
@@ -333,11 +342,16 @@ Increment `:version` when reducer behavior changes in a way that should rebuild 
 
 ### Query Handlers
 
-Queries live in the backend file and call UI functions from `cjbarre.grain-todo-list.ui`.
+Queries live in `cjbarre.grain-todo-list.todo-list-service.queries` and call page functions from `cjbarre.grain-todo-list.todo-list-service.ui`.
 
 Static page:
 
 ```clojure
+(ns cjbarre.grain-todo-list.todo-list-service.queries
+  (:require [ai.obney.grain.query-processor.interface :refer [defquery]]
+            [cjbarre.grain-todo-list.todo-list-service.read-models :as rm]
+            [cjbarre.grain-todo-list.todo-list-service.ui :as ui]))
+
 (defquery :todo dev-gallery-page
   {:authorized? (constantly true)
    :datastar/path "/dev/gallery"
@@ -379,40 +393,45 @@ For Datastar v2 app guidance, do not use `:datastar/fps`. Use event-driven reads
 
 ### Todo Processors
 
-Event-driven side effects live in the backend file.
+Event-driven side effects and tenant-poller lifecycle live in `cjbarre.grain-todo-list.todo-list-service.todo-processors`.
 
 ```clojure
-;; Todo processors
+(ns cjbarre.grain-todo-list.todo-list-service.todo-processors
+  (:require [ai.obney.grain.todo-processor-v2.interface :as tp]))
 
-(defn send-follow-up
-  [{{:keys [task-id]} :event :as ctx}]
-  ;; Dispatch a command, send a notification, etc.
-  )
+(defn start
+  [{:keys [event-store cache tenant-id]}]
+  (tp/start-tenant-poller
+   {:event-store event-store
+    :tenant-ids #{tenant-id}
+    :context {:cache cache}
+    :poll-interval-ms 250}))
 
-(def todo-processors
-  {:todo/send-follow-up
-   {:handler-fn #'send-follow-up
-    :topics [:todo/task-captured]}})
+(defn stop
+  [poller]
+  (tp/stop-tenant-poller poller))
 ```
 
-Use var references (`#'send-follow-up`) so REPL reloading updates behavior without rebuilding the whole system.
+Put processor handler definitions in this namespace as they are added. Use var references (`#'send-follow-up`) for handler functions so REPL reloading updates behavior without rebuilding the whole system.
 
 ### Periodic Tasks
 
-Scheduled tasks live in the backend file.
+Scheduled trigger lifecycle lives in `cjbarre.grain-todo-list.todo-list-service.periodic-tasks`.
 
 ```clojure
-;; Periodic tasks
+(ns cjbarre.grain-todo-list.todo-list-service.periodic-tasks
+  (:require [ai.obney.grain.event-store-v3.interface :as es]
+            [ai.obney.grain.periodic-task.interface :as pt]))
 
-(defn prune-completed-tasks
-  [ctx _time]
-  ;; scan read model, dispatch commands, or append events
-  )
+(defn start
+  [{:keys [event-store tenant-id]}]
+  (pt/start-periodic-triggers!
+   {:append-fn (partial es/append event-store)
+    :tenant-ids-fn (constantly #{tenant-id})}))
 
-(def periodic-tasks
-  {:todo/prune-completed-tasks
-   {:handler-fn #'prune-completed-tasks
-    :schedule {:every 60 :duration :seconds}}})
+(defn stop
+  [triggers]
+  (pt/stop-periodic-triggers! triggers))
 ```
 
 Keep periodic tasks idempotent. If a task can run twice, use event-store CAS or command-level validation to avoid duplicate effects.
@@ -718,21 +737,21 @@ Only keep raw Datastar strings when the DSL does not yet cover a needed behavior
 
 ## New Feature Checklist
 
-For this project, do not create a new component or service directory. Add the feature in place.
+For this project, add todo behavior inside the existing local service component.
 
-1. Add event type names and read model logic to `src/cjbarre/grain_todo_list.clj`.
-2. Add read helper functions in the same backend file.
-3. Add command handlers in the same backend file.
-4. Add query handlers in the same backend file.
-5. Add pure page functions to `src/cjbarre/grain_todo_list/ui.clj`.
-6. Add or update reusable components in `src/cjbarre/grain_todo_list/ui/components.clj`.
-7. Make the query call the UI function.
+1. Add or update payload schemas in `todo_list_service/schemas.clj`.
+2. Add event type names, reducer logic, and read helpers in `todo_list_service/read_models.clj`.
+3. Add command handlers in `todo_list_service/commands.clj`.
+4. Add query handlers and query data assembly in `todo_list_service/queries.clj`.
+5. Add pure page functions to `todo_list_service/ui.clj`.
+6. Add or update reusable UI elements in `src/cjbarre/grain_todo_list/ui/components.clj`.
+7. Make the query call the service UI function.
 8. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
-9. Add route wiring in `::routes` only if the Grain route helpers do not already provide it.
+9. Add route wiring in the root `::routes` only if the Grain route helpers do not already provide it.
 10. Run `npm run css:build` after adding new Tailwind classes.
-11. Start the app from the REPL with `(def app (start))`.
+11. Start the app from the REPL with `(def app (app/start))`.
 
-Only split a new namespace out when the current file structure is clearly slowing development down.
+Only add another service directory if the app grows a second domain with its own schemas, commands, queries, read models, and UI.
 
 ---
 
@@ -825,10 +844,11 @@ When reading Grain or Polylith examples, translate paths like this:
 | Example path | This project |
 | --- | --- |
 | `bases/web-api/src/.../core.clj` | `src/cjbarre/grain_todo_list.clj` |
-| `components/{service}/core/commands.clj` | command section in `src/cjbarre/grain_todo_list.clj` |
-| `components/{service}/core/queries.clj` | query section in `src/cjbarre/grain_todo_list.clj` |
-| `components/{service}/core/read_models.clj` | read model section in `src/cjbarre/grain_todo_list.clj` |
-| `components/{service}/core/views.clj` | `src/cjbarre/grain_todo_list/ui.clj` or `src/cjbarre/grain_todo_list/ui/components.clj` |
+| `components/{service}/core/schemas.clj` | `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` |
+| `components/{service}/core/commands.clj` | `src/cjbarre/grain_todo_list/todo_list_service/commands.clj` |
+| `components/{service}/core/queries.clj` | `src/cjbarre/grain_todo_list/todo_list_service/queries.clj` |
+| `components/{service}/core/read_models.clj` | `src/cjbarre/grain_todo_list/todo_list_service/read_models.clj` |
+| `components/{service}/core/views.clj` | `src/cjbarre/grain_todo_list/todo_list_service/ui.clj` |
 | `components/{service}/interface.clj` | no app-local equivalent; require the local namespace directly |
 | `bases/web-api/resources/.../public/css/main.css` | `resources/public/css/main.css` |
 

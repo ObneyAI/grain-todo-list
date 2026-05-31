@@ -6,7 +6,9 @@
             [ai.obney.grain.query-processor.interface :as qp]
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
             [cjbarre.grain-todo-list :as app]
-            [cjbarre.grain-todo-list.ui :as ui]
+            [cjbarre.grain-todo-list.todo-list-service.read-models :as todo-read-models]
+            [cjbarre.grain-todo-list.todo-list-service.schemas :as todo-schemas]
+            [cjbarre.grain-todo-list.todo-list-service.ui :as ui]
             [cjbarre.grain-todo-list.ui.components :as c]
             [clojure.string :as string]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -118,6 +120,13 @@
     (f)
     (rmp/l1-clear!)))
 
+(deftest root-app-composition-test
+  (testing "root app namespace owns composition and lifecycle entrypoints"
+    (is (map? app/system))
+    (is (contains? app/system :cjbarre.grain-todo-list/routes))
+    (is (fn? app/start))
+    (is (fn? app/stop))))
+
 (deftest pure-schema-validation
   (testing "valid payloads satisfy app schemas"
     (is (m/validate :todo/capture-task
@@ -145,25 +154,25 @@
 (deftest pure-reducer-and-helper-tests
   (testing "task reducer is pure and reconstructs state from event maps"
     (let [state (-> {}
-                    (app/tasks* {:event/type :todo/task-captured
-                                 :task-id task-id
-                                 :title "Inbox task"
-                                 :bucket :inbox
-                                 :status :active
-                                 :order 1000})
-                    (app/tasks* {:event/type :todo/task-moved-to-bucket
-                                 :task-id task-id
-                                 :bucket :next
-                                 :order 2000})
-                    (app/tasks* {:event/type :todo/task-completed
-                                 :task-id task-id}))]
+                    (todo-read-models/tasks* {:event/type :todo/task-captured
+                                              :task-id task-id
+                                              :title "Inbox task"
+                                              :bucket :inbox
+                                              :status :active
+                                              :order 1000})
+                    (todo-read-models/tasks* {:event/type :todo/task-moved-to-bucket
+                                              :task-id task-id
+                                              :bucket :next
+                                              :order 2000})
+                    (todo-read-models/tasks* {:event/type :todo/task-completed
+                                              :task-id task-id}))]
       (is (= :completed (get-in state [task-id :status])))
       (is (= :next (get-in state [task-id :bucket])))))
   (testing "pure ordering helper sorts by order then title"
     (is (= [task-2-id task-id]
            (map :task-id
-                (app/ordered-tasks [{:task-id task-id :title "B" :order 2}
-                                    {:task-id task-2-id :title "A" :order 1}]))))))
+                (todo-read-models/ordered-tasks [{:task-id task-id :title "B" :order 2}
+                                                 {:task-id task-2-id :title "A" :order 1}]))))))
 
 (deftest command-processor-task-lifecycle
   (with-context
@@ -256,10 +265,10 @@
       (process! ctx :todo/capture-task {:task-id task-id :title "Visible" :bucket :next :order 20})
       (process! ctx :todo/capture-task {:task-id task-2-id :title "Deferred" :bucket :next :defer-until later :order 10})
       (testing "helpers read real Grain projections"
-        (is (= [task-id] (map :task-id (app/tasks-for-bucket ctx :next now))))
-        (is (= [task-2-id] (map :task-id (app/deferred-tasks ctx now))))
+        (is (= [task-id] (map :task-id (todo-read-models/tasks-for-bucket ctx :next now))))
+        (is (= [task-2-id] (map :task-id (todo-read-models/deferred-tasks ctx now))))
         (is (= [task-2-id task-id]
-               (map :task-id (app/tasks-for-bucket ctx :next (.plusDays later 1)))))))))
+               (map :task-id (todo-read-models/tasks-for-bucket ctx :next (.plusDays later 1)))))))))
 
 (deftest query-processor-tests
   (with-context
@@ -332,7 +341,7 @@
                                           {:review-id review-id :project-id project-id}))))
         (process! ctx :todo/reactivate-project {:project-id project-id}))
       (testing "review completes after all buckets and active projects are reviewed"
-        (doseq [bucket app/buckets]
+        (doseq [bucket todo-schemas/buckets]
           (process! ctx :todo/mark-bucket-reviewed {:review-id review-id :bucket bucket}))
         (process! ctx :todo/mark-project-reviewed {:review-id review-id :project-id project-id})
         (let [result (process! ctx :todo/complete-weekly-review {:review-id review-id})]
@@ -387,21 +396,21 @@
                                             :status :completed
                                             :order 2000}]
                                 :projects []
-                                :review {}})]
-      (let [leaves (tree-seq coll? seq hiccup)
-            attrs (filter map? leaves)]
-        (is (= :div#app (first hiccup)))
-        (is (some #(= "Workflow" %) leaves))
-        (is (some #(= "Planning" %) leaves))
-        (is (some #(= "Projects" %) leaves))
-        (is (some #(= "Weekly Review" %) leaves))
-        (is (some #(= "Capture a task" %) leaves))
-        (is (some #(= "UI task" %) leaves))
-        (is (some #(= "Done / Canceled" %) leaves))
-        (is (some #(= "1 item closed" %) leaves))
-        (is (not (some #(= "Closed task" %) leaves)))
-        (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
-        (is (some #(= "/review" (:href %)) attrs)))))
+                                :review {}})
+          leaves (tree-seq coll? seq hiccup)
+          attrs (filter map? leaves)]
+      (is (= :div#app (first hiccup)))
+      (is (some #(= "Workflow" %) leaves))
+      (is (some #(= "Planning" %) leaves))
+      (is (some #(= "Projects" %) leaves))
+      (is (some #(= "Weekly Review" %) leaves))
+      (is (some #(= "Capture a task" %) leaves))
+      (is (some #(= "UI task" %) leaves))
+      (is (some #(= "Done / Canceled" %) leaves))
+      (is (some #(= "1 item closed" %) leaves))
+      (is (not (some #(= "Closed task" %) leaves)))
+      (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
+      (is (some #(= "/review" (:href %)) attrs))))
 
   (testing "review page exposes projection-derived progress without running processors"
     (let [hiccup (ui/review-page {:buckets {:inbox []
@@ -542,6 +551,16 @@
     (let [source (str (slurp "src/cjbarre/grain_todo_list.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/ui.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/commands.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/queries.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/read_models.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/schemas.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/ui.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/ui/components.clj"))
           deprecated-patterns ["command-click"

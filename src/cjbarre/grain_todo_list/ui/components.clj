@@ -561,7 +561,7 @@
                 {:key :completed :label (str (get task-counts :completed 0) " done")}])]
    (project-actions project)])
 
-(defn project-card [{:keys [project-id name status task-counts] :as project}]
+(defn project-card [{:keys [name status task-counts] :as project}]
   (surface {:tag :article :variant :card}
            [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
             [:a {:class (str clickable-content-class " space-y-2")
