@@ -5,14 +5,16 @@ This project is intentionally small. Build the app in a minimal Clojure layout r
 The goal is to keep application code in a few obvious places:
 
 - `src/cjbarre/grain_todo_list.clj` - application composition, Integrant system, routes, lifecycle
+- `src/cjbarre/grain_todo_list/ui.clj` - application shell and app-level UI chrome
+- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable app-wide Hiccup UI primitives
 - `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` - schema constants, validation helpers, and primitive-specific `defschemas`
 - `src/cjbarre/grain_todo_list/todo_list_service/read_models.clj` - read model reducers, `defreadmodel`s, and projection helpers
 - `src/cjbarre/grain_todo_list/todo_list_service/commands.clj` - command helpers and `defcommand`s
 - `src/cjbarre/grain_todo_list/todo_list_service/queries.clj` - query data assembly and `defquery`s
 - `src/cjbarre/grain_todo_list/todo_list_service/ui.clj` - page-level todo UI composition
+- `src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj` - todo-specific UI controls, cards, lists, and gallery specimens
 - `src/cjbarre/grain_todo_list/todo_list_service/todo_processors.clj` - todo processor lifecycle
 - `src/cjbarre/grain_todo_list/todo_list_service/periodic_tasks.clj` - periodic trigger lifecycle
-- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable UI elements and Datastar v2 DSL usage
 
 Supporting files:
 
@@ -99,6 +101,16 @@ Use `src/cjbarre/grain_todo_list.clj` only for app composition:
 
 Do not put todo domain logic, command handlers, query handlers, schemas, read models, or page rendering in the root app namespace.
 
+### App UI File
+
+Use `src/cjbarre/grain_todo_list/ui.clj` for application-level UI chrome:
+
+- `app-shell` and shared page container structure
+- app-level error display
+- product-level labels, title composition, and page chrome
+
+This namespace should not alias todo service pages. Future service components should be able to use the same shell without depending on todo-specific widgets.
+
 ### Service Files
 
 Use `src/cjbarre/grain_todo_list/todo_list_service/` for todo domain behavior:
@@ -108,6 +120,7 @@ Use `src/cjbarre/grain_todo_list/todo_list_service/` for todo domain behavior:
 - `commands.clj` owns anomaly helpers, command helper functions, and `defcommand`s.
 - `queries.clj` owns query data assembly and `defquery`s.
 - `ui.clj` owns pure page-level todo Hiccup composition.
+- `ui/components.clj` owns todo-specific controls, task/project/review widgets, and todo gallery specimens.
 - `todo_processors.clj` owns todo processor start/stop functions.
 - `periodic_tasks.clj` owns periodic trigger start/stop functions.
 
@@ -126,27 +139,36 @@ Example:
 
 ```clojure
 (ns cjbarre.grain-todo-list.todo-list-service.ui
-  (:require [cjbarre.grain-todo-list.ui.components :as c]))
+  (:require [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
+            [cjbarre.grain-todo-list.ui :as app-ui]
+            [cjbarre.grain-todo-list.ui.components :as c]))
 
 (defn home-page
   [{:keys [tasks projects]}]
-  [:div#app
-   (c/app-shell {:title "Grain Todo"}
-    (c/quick-add {})
-    (c/task-list tasks projects))])
+  (app-ui/app-shell {:title "Grain Todo"}
+    (tc/quick-add {})
+    (tc/task-list tasks "No tasks yet." projects)))
 ```
 
-### Components UI File
+### App Components UI File
 
-Use `src/cjbarre/grain_todo_list/ui/components.clj` for reusable Hiccup components and Datastar v2 DSL calls:
+Use `src/cjbarre/grain_todo_list/ui/components.clj` for reusable app-wide Hiccup primitives and Datastar v2 DSL helpers:
 
-- buttons, chips, fields, panels, lists, cards
-- command forms
-- command buttons
-- inline edit controls
-- stream repost controls for search, filters, and pagination
+- buttons, chips, fields, panels, lists, cards, and surfaces
+- shell-neutral form helpers
+- generic command buttons and inline edit controls
+- generic stream repost controls for search, filters, and pagination
 
 Prefer adapter-owned DSL helpers over local string builders. New code should not create app-owned Datastar helpers that duplicate `ds/signal`, `ds/assign`, `ds/signals`, `ds/bind`, `ds/action-form`, `ds/on-click-command`, or `ds/on-command`.
+
+### Service Components UI File
+
+Use `src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj` for todo-specific UI:
+
+- quick-add and project-add forms
+- task/project cards, summaries, detail panels, and action controls
+- bucket labels, schedule controls, planning summaries, and review controls
+- todo dev gallery fixtures and specimens
 
 ---
 
@@ -585,7 +607,7 @@ For date inputs, derive the ISO value with `:let` and branch between set and cle
 
 ### Command Forms
 
-Use `ds/action-form` for command forms. The helper owns Datastar behavior; the caller owns visual markup.
+Use `ds/action-form` for command forms. The helper owns Datastar behavior; the caller owns visual markup. Todo-specific command forms belong in `todo_list_service/ui/components.clj`.
 
 ```clojure
 (defn quick-add
@@ -655,15 +677,11 @@ Every Datastar page should return a `div#app` root so the server can patch the p
 ```clojure
 (defn tasks-page
   [{:keys [tasks projects]}]
-  [:div#app
-   [:main {:class "min-h-screen bg-base-100"}
-    [:div {:class "mx-auto max-w-4xl px-4 py-8"}
-     [:header {:class "mb-6 flex items-center justify-between gap-4"}
-      [:h1 {:class "text-2xl font-semibold"} "Tasks"]]
-     (c/quick-add {})
-     (if (seq tasks)
-       (c/task-list tasks projects)
-       (c/empty-state "No tasks yet."))]]])
+  (app-ui/app-shell {:title "Tasks"}
+    (tc/quick-add {})
+    (if (seq tasks)
+      (tc/task-list tasks "No tasks yet." projects)
+      (c/empty-state "No tasks yet."))))
 ```
 
 ### Small Components
@@ -688,19 +706,19 @@ Prefer small component functions over a broad component library:
 
 ### Error Display
 
-Use the adapter-owned `error` signal for top-level command failures:
+Use the adapter-owned `error` signal for top-level command failures. The app-level implementation lives in `cjbarre.grain-todo-list.ui/action-error`:
 
 ```clojure
 (defn action-error []
-  [:div (merge {:class "alert alert-error mb-4"} (ds/show "$error"))
-   [:span (ds/text "$error")]])
+  [:div (merge {:class "alert alert-error mb-4"} (ds/show (ds/expr "$error")))
+   [:span (ds/text (ds/expr "$error"))]])
 ```
 
 Field-level errors should read from `fieldErrors` when commands return field error maps.
 
 ### Lists
 
-Keep list rendering boring and durable:
+Keep list rendering boring and durable. Todo-specific lists belong in the todo service component namespace:
 
 ```clojure
 (defn task-list [tasks projects]
@@ -745,12 +763,13 @@ For this project, add todo behavior inside the existing local service component.
 4. Add query handlers and query data assembly in `todo_list_service/queries.clj`.
 5. Add pure page functions to `todo_list_service/ui.clj`.
 6. Add or update read-model state schemas in `read-model-schemas` when projection shapes change.
-7. Add or update reusable UI elements in `src/cjbarre/grain_todo_list/ui/components.clj`.
-8. Make the query call the service UI function.
-9. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
-10. Add route wiring in the root `::routes` only if the Grain route helpers do not already provide it.
-11. Run `npm run css:build` after adding new Tailwind classes.
-12. Start the app from the REPL with `(def app (app/start))`.
+7. Add or update reusable app-wide UI primitives in `src/cjbarre/grain_todo_list/ui/components.clj`.
+8. Add or update todo-specific UI widgets in `todo_list_service/ui/components.clj`.
+9. Make the query call the service UI function.
+10. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
+11. Add route wiring in the root `::routes` only if the Grain route helpers do not already provide it.
+12. Run `npm run css:build` after adding new Tailwind classes.
+13. Start the app from the REPL with `(def app (app/start))`.
 
 Only add another service directory if the app grows a second domain with its own schemas, commands, queries, read models, and UI.
 

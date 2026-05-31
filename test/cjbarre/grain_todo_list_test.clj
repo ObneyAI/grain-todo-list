@@ -9,6 +9,7 @@
             [cjbarre.grain-todo-list.todo-list-service.read-models :as todo-read-models]
             [cjbarre.grain-todo-list.todo-list-service.schemas :as todo-schemas]
             [cjbarre.grain-todo-list.todo-list-service.ui :as ui]
+            [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
             [cjbarre.grain-todo-list.ui.components :as c]
             [clojure.string :as string]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -383,30 +384,34 @@
           (is (= :completed (:status (project-review ctx)))))))))
 
 (deftest pure-ui-rendering-tests
-  (testing "UI substrate primitives render reusable section, empty, and summary surfaces"
+  (testing "UI substrate primitives render reusable section and empty surfaces"
     (let [hiccup [:div
                   (c/page-section {:title "Substrate" :count 2}
                                   (c/empty-state "Nothing to show."))
                   (c/panel {:title "Panel Primitive"
                             :status "Grouped surface"}
-                           (c/empty-state "Quiet well."))
-                  (c/task-summary-row {:task-id task-id
-                                       :title "Summary task"
-                                       :bucket :next
-                                       :status :active
-                                       :order 1000
-                                       :due-at later}
-                                      [{:project-id project-id :name "Project"}])
-                  (c/project-summary-row {:project-id project-id
-                                          :name "Summary project"
-                                          :status :active
-                                          :task-counts {:active 1 :completed 0}})]
-          leaves (tree-seq coll? seq hiccup)
-          attrs (filter map? leaves)]
+                           (c/empty-state "Quiet well."))]
+          leaves (tree-seq coll? seq hiccup)]
       (is (some #(= "Substrate" %) leaves))
       (is (some #(= "Panel Primitive" %) leaves))
       (is (some #(= "Quiet well." %) leaves))
-      (is (some #(= "Nothing to show." %) leaves))
+      (is (some #(= "Nothing to show." %) leaves))))
+
+  (testing "todo service components render task and project summaries"
+    (let [hiccup [:div
+                  (tc/task-summary-row {:task-id task-id
+                                        :title "Summary task"
+                                        :bucket :next
+                                        :status :active
+                                        :order 1000
+                                        :due-at later}
+                                       [{:project-id project-id :name "Project"}])
+                  (tc/project-summary-row {:project-id project-id
+                                           :name "Summary project"
+                                           :status :active
+                                           :task-counts {:active 1 :completed 0}})]
+          leaves (tree-seq coll? seq hiccup)
+          attrs (filter map? leaves)]
       (is (some #(= "Summary task" %) leaves))
       (is (some #(= "Summary project" %) leaves))
       (is (= 1 (count (filter #(= "Due 2026-05-23" %) leaves))))
@@ -541,7 +546,7 @@
                 :project-id project-id
                 :due-at later
                 :defer-until later}
-          card-leaves (tree-seq coll? seq (c/task-card task []))
+          card-leaves (tree-seq coll? seq (tc/task-card task []))
           card-attrs (filter map? card-leaves)
           page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
           page-attrs (filter map? page-leaves)
@@ -595,6 +600,8 @@
                       (slurp "src/cjbarre/grain_todo_list/todo_list_service/schemas.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/todo_list_service/ui.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/ui/components.clj"))
           deprecated-patterns ["command-click"

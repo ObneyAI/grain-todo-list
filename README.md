@@ -7,8 +7,9 @@ A small Grain + Datastar todo app experiment.
 The project intentionally avoids a Polylith layout while keeping the todo domain organized as one local service component:
 
 - `src/cjbarre/grain_todo_list.clj` - Integrant system, routes, app lifecycle
+- `src/cjbarre/grain_todo_list/ui.clj` - application shell and app-level UI chrome
+- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable app-wide Hiccup UI primitives
 - `src/cjbarre/grain_todo_list/todo_list_service/` - todo schemas, read models, commands, queries, processors, periodic tasks, and page UI
-- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable Hiccup UI elements and Datastar v2 DSL usage
 - `css/main.css` - Tailwind/DaisyUI input
 - `resources/public/css/main.css` - generated CSS served by the app
 

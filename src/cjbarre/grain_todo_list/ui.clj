@@ -1,11 +1,20 @@
 (ns cjbarre.grain-todo-list.ui
-  (:require [cjbarre.grain-todo-list.todo-list-service.ui :as service-ui]))
+  (:require [ai.obney.grain.datastar_v2.interface :as ds]
+            [cjbarre.grain-todo-list.ui.components :as c]))
 
-(def shell service-ui/shell)
-(def home-page service-ui/home-page)
-(def tasks-page service-ui/tasks-page)
-(def task-page service-ui/task-page)
-(def projects-page service-ui/projects-page)
-(def project-page service-ui/project-page)
-(def review-page service-ui/review-page)
-(def dev-gallery-page service-ui/dev-gallery-page)
+(defn app-shell [{:keys [title]} & body]
+  [:div#app
+   [:main {:class "gallery-page min-h-screen bg-base-100 text-base-content"}
+    [:div {:class "mx-auto max-w-6xl px-4 py-8"}
+     (into
+      [:div {:class "app-vista"}
+       [:header {:class "mb-8 flex flex-col gap-2"}
+        (c/product-label "Grain Todo")
+        (c/page-title title)
+        [:p {:class "max-w-2xl text-sm text-base-content/70"}
+         "A personal GTD workspace backed by Grain events and Datastar updates."]]]
+      body)]]])
+
+(defn action-error []
+  [:div (merge {:class "alert alert-error mb-4"} (ds/show (ds/expr "$error")))
+   [:span (ds/text (ds/expr "$error"))]])

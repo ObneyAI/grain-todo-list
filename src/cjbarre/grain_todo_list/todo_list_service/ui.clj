@@ -1,30 +1,32 @@
 (ns cjbarre.grain-todo-list.todo-list-service.ui
   (:require [ai.obney.grain.datastar_v2.interface :as ds]
+            [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
+            [cjbarre.grain-todo-list.ui :as app-ui]
             [cjbarre.grain-todo-list.ui.components :as c]))
 
 (defn shell [{:keys [title]} & body]
-  (apply c/app-shell {:title title} body))
+  (apply app-ui/app-shell {:title title} body))
 
 (defn home-page [{:keys [buckets deferred due-soon inactive projects review]}]
   (shell {:title "GTD Workspace"}
-         (c/action-error)
+         (app-ui/action-error)
          [:div {:class "grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"}
           [:div {:class "grid gap-6"}
            (c/panel {:title "Workflow"
                      :status "Current buckets for active work and parked ideas."}
-                    (c/quick-add {:bucket :inbox})
+                    (tc/quick-add {:bucket :inbox})
                     (for [bucket [:inbox :next :waiting :someday]]
                       (with-meta
-                        (c/page-section {:title (get c/bucket-labels bucket)
+                        (c/page-section {:title (get tc/bucket-labels bucket)
                                          :count (count (get buckets bucket))
                                          :class "border-t border-base-content/10 pt-5 first:border-t-0 first:pt-0"}
-                                        (c/task-list (get buckets bucket) "Nothing here." projects))
+                                        (tc/task-list (get buckets bucket) "Nothing here." projects))
                         {:key bucket})))]
           [:aside {:class "grid content-start gap-6"}
            (c/panel {:title "Projects"
                      :count (count projects)}
-                    (c/project-add)
-                    (c/projects-list projects))
+                    (tc/project-add)
+                    (tc/projects-list projects))
            [:a {:class "block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 :href "/review"
                 :aria-label "Weekly review"}
@@ -34,51 +36,51 @@
                                 "No active weekly review.")})]
            (c/panel {:title "Planning"
                      :status "Scheduled and recently closed work."}
-                    (c/planning-summary {:deferred deferred
+                    (tc/planning-summary {:deferred deferred
                                          :due-soon due-soon
                                          :inactive inactive
                                          :projects projects}))]]))
 
 (defn tasks-page [{:keys [bucket tasks projects]}]
-  (shell {:title (str (get c/bucket-labels bucket "Tasks") " Tasks")}
-         (c/action-error)
-         [:div {:class "mb-6"} (c/quick-add {:bucket bucket})]
-         (c/task-list tasks "No tasks in this bucket." projects)))
+  (shell {:title (str (get tc/bucket-labels bucket "Tasks") " Tasks")}
+         (app-ui/action-error)
+         [:div {:class "mb-6"} (tc/quick-add {:bucket bucket})]
+         (tc/task-list tasks "No tasks in this bucket." projects)))
 
 (defn task-page [{:keys [task projects]}]
   (shell {:title (or (:title task) "Task")}
-         (c/action-error)
+         (app-ui/action-error)
          (if task
-           (c/task-detail-panel task projects)
+           (tc/task-detail-panel task projects)
            [:div {:class "alert alert-warning"} "Task not found."])))
 
 (defn projects-page [{:keys [projects]}]
   (shell {:title "Projects"}
-         (c/action-error)
-         [:div {:class "mb-6"} (c/project-add)]
-         (c/projects-list projects)))
+         (app-ui/action-error)
+         [:div {:class "mb-6"} (tc/project-add)]
+         (tc/projects-list projects)))
 
 (defn project-page [{:keys [project tasks projects]}]
   (shell {:title (or (:name project) "Project")}
-         (c/action-error)
+         (app-ui/action-error)
          (if project
            [:div {:class "space-y-6"}
             (c/surface {:tag :section :variant :card}
              [:div {:class "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"}
               [:div {:class "min-w-0 space-y-2"}
-               (c/project-editor project)
-               (c/task-count-row (:task-counts project))]
-              (c/project-actions project)]
+               (tc/project-editor project)
+               (tc/task-count-row (:task-counts project))]
+              (tc/project-actions project)]
              [:p {:class "mt-4 text-sm text-base-content/70"}
               (str "Status: " (clojure.core/name (:status project)))])
             (when (= :active (:status project))
-              (c/quick-add {:bucket :next :project-id (:project-id project)}))
-            (c/task-list tasks "No active tasks for this project." projects)]
+              (tc/quick-add {:bucket :next :project-id (:project-id project)}))
+            (tc/task-list tasks "No active tasks for this project." projects)]
            [:div {:class "alert alert-warning"} "Project not found."])))
 
 (defn review-page [{:keys [buckets deferred due-soon inactive projects review-projects projects-without-next-action review]}]
   (shell {:title "Weekly Review"}
-         (c/action-error)
+         (app-ui/action-error)
          [:section {:class "space-y-4"}
           (if (= :active (:status review))
             (let [reviewed-buckets (:reviewed-buckets review)
@@ -97,25 +99,25 @@
                 (for [bucket [:inbox :next :waiting :someday]
                       :let [tasks (get buckets bucket)
                             reviewed? (contains? reviewed-buckets bucket)]]
-                  (c/page-section {:title (get c/bucket-labels bucket)
+                  (c/page-section {:title (get tc/bucket-labels bucket)
                                    :count (count tasks)
                                    :status (if reviewed? "This bucket has been reviewed." "Inspect these tasks, then mark the bucket reviewed.")
-                                   :action (c/review-bucket-action review bucket reviewed?)}
-                                  (c/task-summary-list tasks "Nothing here." projects)))]
+                                   :action (tc/review-bucket-action review bucket reviewed?)}
+                                  (tc/task-summary-list tasks "Nothing here." projects)))]
                (c/page-section {:title "Due Soon" :count (count due-soon)}
-                               (c/task-summary-list due-soon "No due dates yet." projects))
+                               (tc/task-summary-list due-soon "No due dates yet." projects))
                (c/page-section {:title "Deferred" :count (count deferred)}
-                               (c/task-summary-list deferred "No deferred tasks." projects))
+                               (tc/task-summary-list deferred "No deferred tasks." projects))
                (c/page-section {:title "Projects Without Next Actions"
                                 :count (count projects-without-next-action)
                                 :status "These active projects may need a next action."}
-                               (c/project-summary-list projects-without-next-action "Every active project has an active task."))
+                               (tc/project-summary-list projects-without-next-action "Every active project has an active task."))
                (c/page-section {:title "Active Projects"
                                 :count (count review-projects)
                                 :status "Review each active project for stale outcomes and next actions."}
-                               (c/review-project-list review reviewed-project-ids review-projects))
+                               (tc/review-project-list review reviewed-project-ids review-projects))
                (c/page-section {:title "Done / Canceled" :count (count inactive)}
-                               (c/task-summary-list inactive "No recently completed or canceled tasks." projects))
+                               (tc/task-summary-list inactive "No recently completed or canceled tasks." projects))
                (c/action-button {:label "Complete review"
                                  :class "btn-primary"
                                  :disabled? (not review-complete?)
@@ -126,4 +128,4 @@
                               :on-click-attrs (ds/on-click-command :todo/start-weekly-review)}))]))
 
 (defn dev-gallery-page []
-  (c/dev-gallery-page))
+  (tc/dev-gallery-page))
