@@ -30,7 +30,7 @@
 
 (defcommand :todo capture-task
   {:authorized? (constantly true)}
-  "Capture a new task."
+  "Add a new task."
   [{{:keys [task-id title project-id due-within-days order]} :command :as ctx}]
   (let [task-id (or task-id (random-uuid))
         due-within-set-at (when due-within-days (OffsetDateTime/now))
@@ -50,7 +50,7 @@
                             project-id (assoc :project-id project-id)
                             due-within-days (assoc :due-within-days due-within-days
                                                    :due-within-set-at due-within-set-at))})]
-         :datastar/signals {:__toast "Task captured."}}))))
+         :datastar/signals {:__toast "Task added."}}))))
 
 (defcommand :todo rename-task
   {:authorized? (constantly true)}

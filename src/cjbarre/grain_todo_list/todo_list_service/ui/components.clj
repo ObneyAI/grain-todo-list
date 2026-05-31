@@ -65,7 +65,7 @@
        :reset-on-success? true}
       [:input (merge {:class "input input-bordered min-w-0 flex-1"
                       :aria-label "Task title"
-                      :placeholder "Capture a task"
+                      :placeholder "Add a task"
                       :required true}
                      (ds/bind :title))]
       (action-button {:label "Add" :class "btn-primary" :type "submit"}))
@@ -448,7 +448,7 @@
 
 (def gallery-projects
   [{:project-id gallery-project-id
-    :name "Launch reference workflow"
+    :name "Launch reference checklist"
     :status :active
     :task-counts {:active 3 :completed 1}}
    {:project-id gallery-project-2-id
@@ -458,7 +458,7 @@
 
 (def gallery-tasks
   [{:task-id gallery-task-id
-    :title "Draft capture conventions"
+    :title "Draft task entry guidelines"
     :status :active
     :order 1000
     :project-id gallery-project-id
@@ -586,7 +586,7 @@
        (fundamental-tray
         "Surfaces"
         (panel {:title "Panel surface"
-                :status "Groups related workflow content."}
+                :status "Groups related todo content."}
                (empty-state "Quiet panel well."))
         (surface {:variant :compact-card}
                  [:p {:class "text-sm font-medium"} "Card surface"]
@@ -610,7 +610,7 @@
         (inert (select-field {:signal-name project-signal
                               :aria-label "Project"}
                              [:option {:value ""} "No project"]
-                             [:option {:value gallery-project-id} "Launch reference workflow"]))
+                             [:option {:value gallery-project-id} "Launch reference checklist"]))
         (inert (due-within-field {:signal-name due-signal
                                   :value 3
                                   :id-value gallery-task-id})))
@@ -681,7 +681,7 @@
 (defn gallery-home-panel-sample
   [active-task active-project]
   [:div {:class "grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]"}
-   (panel {:title "Workflow"
+   (panel {:title "Tasks"
            :status "Active work stays in one ordered list."
            :count 1}
           (quick-add {})
@@ -705,7 +705,7 @@
 
 (defn gallery-specimen
   [{:keys [compact?]}]
-  (let [[active-task waiting-task completed-task] gallery-tasks
+  (let [[active-task second-task completed-task] gallery-tasks
         [active-project completed-project] gallery-projects
         canceled-project (assoc completed-project
                                 :project-id #uuid "00000000-0000-0000-0000-000000000909"
@@ -717,7 +717,7 @@
                       (inert (gallery-home-panel-sample active-task active-project)))
 
      (gallery-section {:title "Forms and Alerts"
-                       :status "Capture forms, project creation, and transient error messaging."}
+                       :status "Add-task forms, project creation, and transient error messaging."}
                       [:div {:class "grid gap-4 lg:grid-cols-[1.3fr_0.9fr]"}
                        [:div {:class "grid gap-4"}
                         (inert (quick-add {}))
@@ -732,7 +732,7 @@
                        [:div {:class "space-y-4"}
                         (inert (task-card active-task gallery-projects))
                         (when-not compact?
-                          (inert (task-card waiting-task gallery-projects)))
+                          (inert (task-card second-task gallery-projects)))
                         (inert (task-card completed-task gallery-projects))
                         (inert (task-summary-list gallery-tasks "No active tasks." gallery-projects))]
                        [:div {:class "space-y-4"}
@@ -774,7 +774,7 @@
                         (review-project-list gallery-review #{} [])]
                        (page-section {:title "Review Controls"
                                       :count 4
-                                      :status "Review each active project for stale outcomes and next actions."
+                                      :status "Review each active project for stale outcomes and open tasks."
                                       :action (inert (chip {:label "review"}))}
                                      (inert (review-task-list gallery-review
                                                               (:reviewed-task-ids gallery-review)

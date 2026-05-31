@@ -12,7 +12,7 @@
         (c/product-label "Grain Todo")
         (c/page-title title)
         [:p {:class "max-w-2xl text-sm text-base-content/70"}
-         "A personal GTD workspace backed by Grain events and Datastar updates."]]]
+         "A focused todo workspace backed by Grain events and Datastar updates."]]]
       body)]]])
 
 (defn action-error []

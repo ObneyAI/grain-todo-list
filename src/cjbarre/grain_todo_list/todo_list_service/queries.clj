@@ -21,7 +21,7 @@
    :grain/read-models {:todo/tasks 1
                        :todo/projects 1
                        :todo/weekly-review 1}}
-  "Main GTD workspace."
+  "Main todo workspace."
   [ctx]
   (let [data (workspace-data ctx)]
     {:query/result data

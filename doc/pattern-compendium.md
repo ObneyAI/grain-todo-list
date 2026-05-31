@@ -165,7 +165,7 @@ Prefer adapter-owned DSL helpers over local string builders. New code should not
 
 Use `src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj` for todo-specific UI:
 
-- quick-add and project-add forms
+- add-task and project-add forms
 - task/project cards, summaries, detail panels, and action controls
 - due-within controls, planning summaries, and task/project review controls
 - todo dev gallery fixtures and specimens
@@ -281,7 +281,7 @@ Use Grain command definitions from the command processor namespace. Keep each co
 
 (defcommand :todo capture-task
   {:authorized? (constantly true)}
-  "Capture a task."
+  "Add a task."
   [{{:keys [title]} :command :as ctx}]
   (cond
     (not (seq title))
@@ -296,7 +296,7 @@ Use Grain command definitions from the command processor namespace. Keep each co
                   :body {:task-id task-id
                          :title title
                          :status :active}})]
-       :datastar/signals {:__toast "Task captured."}})))
+       :datastar/signals {:__toast "Task added."}})))
 ```
 
 Validation pattern:
@@ -617,7 +617,7 @@ Use `ds/action-form` for command forms. The helper owns Datastar behavior; the c
     [:input
      (merge {:class "input input-bordered min-w-0 flex-1"
              :aria-label "Task title"
-             :placeholder "Capture a task"
+             :placeholder "Add a task"
              :required true}
             (ds/bind :title))]
     [:button {:type "submit" :class "btn btn-primary"} "Add"]))

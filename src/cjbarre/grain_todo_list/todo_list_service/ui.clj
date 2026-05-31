@@ -12,7 +12,7 @@
          (app-ui/action-error)
          [:div {:class "grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"}
           [:div {:class "grid gap-6"}
-           (c/panel {:title "Workflow"
+           (c/panel {:title "Tasks"
                      :status "Active work ordered in one list."}
                     (tc/quick-add {})
                     (c/page-section {:title "Active Tasks"
@@ -99,13 +99,13 @@
                                 (tc/review-task-list review reviewed-task-ids review-tasks projects))]
                (c/page-section {:title "Due Soon" :count (count due-soon)}
                                (tc/task-summary-list due-soon "No due dates yet." projects))
-               (c/page-section {:title "Projects Without Next Actions"
+               (c/page-section {:title "Projects Needing Tasks"
                                 :count (count projects-without-next-action)
-                                :status "These active projects may need a next action."}
+                                :status "These active projects may need another task."}
                                (tc/project-summary-list projects-without-next-action "Every active project has an active task."))
                (c/page-section {:title "Active Projects"
                                 :count (count review-projects)
-                                :status "Review each active project for stale outcomes and next actions."}
+                                :status "Review each active project for stale outcomes and open tasks."}
                                (tc/review-project-list review reviewed-project-ids review-projects))
                (c/page-section {:title "Done / Canceled" :count (count inactive)}
                                (tc/task-summary-list inactive "No recently completed or canceled tasks." projects))

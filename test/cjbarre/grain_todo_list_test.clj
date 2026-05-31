@@ -204,12 +204,12 @@
     (fn [ctx]
       (testing "commands go through Grain command processor and append events"
         (let [result (process! ctx :todo/capture-task
-                               {:task-id task-id :title "Capture task"})]
+                               {:task-id task-id :title "Add task"})]
           (is (not (anomaly? result)))
           (is (event-of-type result :todo/task-captured))
-          (is (= {:__toast "Task captured."} (:datastar/signals result)))
+          (is (= {:__toast "Task added."} (:datastar/signals result)))
           (is (not (contains? (:datastar/signals result) :title)))
-          (is (= "Capture task" (get-in (project-tasks ctx) [task-id :title])))))
+          (is (= "Add task" (get-in (project-tasks ctx) [task-id :title])))))
       (testing "invalid commands return anomalies and emit no events"
         (let [result (process! ctx :todo/capture-task {:title " "})]
           (is (= ::anom/incorrect (::anom/category result)))
@@ -410,11 +410,11 @@
           leaves (tree-seq coll? seq hiccup)
           attrs (filter map? leaves)]
       (is (= :div#app (first hiccup)))
-      (is (some #(= "Workflow" %) leaves))
+      (is (some #(= "Tasks" %) leaves))
       (is (some #(= "Planning" %) leaves))
       (is (some #(= "Projects" %) leaves))
       (is (some #(= "Weekly Review" %) leaves))
-      (is (some #(= "Capture a task" %) leaves))
+      (is (some #(= "Add a task" %) leaves))
       (is (some #(= "UI task" %) leaves))
       (is (some #(= "Done / Canceled" %) leaves))
       (is (some #(= "1 item closed" %) leaves))
@@ -450,7 +450,7 @@
       (is (some #(= "1/1 tasks reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "1/1 projects reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "Review due" %) (tree-seq coll? seq hiccup)))
-      (is (some #(= "Projects Without Next Actions" %) (tree-seq coll? seq hiccup)))))
+      (is (some #(= "Projects Needing Tasks" %) (tree-seq coll? seq hiccup)))))
 
   (testing "dev gallery renders canonical fixtures without command post actions"
     (let [hiccup (ui/dev-gallery-page)
@@ -472,8 +472,8 @@
       (is (some #(= "Vista Aero Minimal" %) leaves))
       (is (not (some #(= "Aero Glass Console" %) leaves)))
       (is (not (some #(= "Windows 7 Productivity" %) leaves)))
-      (is (some #(= "Draft capture conventions" %) leaves))
-      (is (some #(= "Launch reference workflow" %) leaves))
+      (is (some #(= "Draft task entry guidelines" %) leaves))
+      (is (some #(= "Launch reference checklist" %) leaves))
       (is (some #(= "Forms and Alerts" %) leaves))
       (is (some #(= "Unable to save changes." %) leaves))
       (is (some #(= "Task Detail and Editing" %) leaves))
