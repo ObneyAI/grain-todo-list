@@ -2,6 +2,8 @@
 
 A small Grain + Datastar todo app experiment.
 
+![Grain Todo home screen](doc/screenshots/home.png)
+
 The project intentionally avoids a Polylith layout. Application code should stay small and local:
 
 - `src/cjbarre/grain_todo_list.clj` - backend, Integrant system, Grain primitives

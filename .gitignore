@@ -25,6 +25,7 @@
 *.class
 *.jar
 *.png
+!doc/screenshots/home.png
 *.swp
 *~
 /checkouts
