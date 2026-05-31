@@ -1,24 +1,53 @@
 # grain-todo-list
 
-A small Grain + Datastar todo app experiment.
+A teaching project for learning how to build with Grain through a small todo
+workspace.
+
+This repository accompanies **Grain Sessions**, a video series about how to use Grain:
+
+- Episode 1: https://youtu.be/tO--joFrYUE
+- Episode 2: https://youtu.be/plMAG4FASdk
+- Episode 3: https://youtu.be/weAsNioiEnI
+- Episode 4: https://youtu.be/XRo49q6yCeo
 
 ![Grain Todo home screen](doc/screenshots/home.png)
 
-The project intentionally avoids a Polylith layout while keeping the todo domain organized as one local service component:
+## What This Demonstrates
 
-- `src/cjbarre/grain_todo_list.clj` - Integrant system, routes, app lifecycle
-- `src/cjbarre/grain_todo_list/ui.clj` - application shell and app-level UI chrome
-- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable app-wide Hiccup UI primitives
-- `src/cjbarre/grain_todo_list/todo_list_service/` - todo schemas, read models, commands, queries, processors, periodic tasks, and page UI
-- `css/main.css` - Tailwind/DaisyUI input
-- `resources/public/css/main.css` - generated CSS served by the app
+The app is intentionally small, but it exercises the main parts of a Grain
+application:
+
+- Capturing, renaming, reordering, completing, canceling, archiving, and
+  reactivating tasks.
+- Grouping work into projects and tracking project task counts.
+- Marking tasks as due within a number of days.
+- Reviewing active tasks and projects through a weekly review workflow.
+- Building UI from Grain query results with Datastar and Hiccup.
+- Organizing command handlers, event schemas, read models, query handlers,
+  processors, periodic tasks, and UI in a compact Clojure app.
+
+## How It Works
+
+The app uses:
+
+- **Grain** for commands, queries, events, read models, request handlers,
+  processors, and periodic tasks.
+- **Datastar** for server-rendered reactive pages.
+- **Integrant** for application composition and lifecycle.
+- **Tailwind CSS** and **DaisyUI** for styling.
+- An in-memory event store and temporary LMDB cache for local development.
+
+The code is laid out as a small Clojure project rather than a Polylith system.
+The todo domain lives under `src/cjbarre/grain_todo_list/todo_list_service/`,
+with the root app namespace handling system startup and routes.
 
 ## Requirements
 
 - Clojure CLI
 - Node.js and npm
 
-The `:dev` alias is required when starting the app because LMDB needs Java module opens.
+The app must be started with the `:dev` alias because LMDB needs Java module
+opens.
 
 ## Install Frontend Dependencies
 
@@ -83,19 +112,8 @@ In another terminal:
 ./scripts/nrepl.sh
 ```
 
-Then work from the REPL. Reload namespaces after edits and restart the Integrant system as needed:
-
-```clojure
-(require 'cjbarre.grain-todo-list.todo-list-service.schemas :reload)
-(require 'cjbarre.grain-todo-list.todo-list-service.read-models :reload)
-(require 'cjbarre.grain-todo-list.todo-list-service.commands :reload)
-(require 'cjbarre.grain-todo-list.todo-list-service.queries :reload)
-(require 'cjbarre.grain-todo-list.todo-list-service.ui :reload)
-(require 'cjbarre.grain-todo-list :reload)
-
-(app/stop system)
-(def system (app/start))
-```
+Then work from the REPL. Reload namespaces after edits and restart the
+Integrant system as needed
 
 ## Tests And Checks
 
@@ -111,8 +129,7 @@ Run clj-kondo:
 clj-kondo --lint src test
 ```
 
-## Notes
+## Agent Instructions
 
-- Datastar pages are generated from Grain query metadata via `ds/routes`.
-- The home page is currently a minimal smoke-test page at `/`.
-- For Datastar or frontend issues, check the Datastar version in use and read the Grain Datastar adapter source before guessing.
+Agent-facing implementation notes live in [AGENTS.md](AGENTS.md). The deeper
+pattern reference is [doc/pattern-compendium.md](doc/pattern-compendium.md).
