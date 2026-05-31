@@ -295,6 +295,13 @@
           (is (not (anomaly? result)))
           (is (= "Render me" (get-in result [:query/result :tasks 0 :title])))
           (is (= :div#app (first (:datastar/hiccup result))))))
+      (testing "workspace project cards include task counts"
+        (process! ctx :todo/create-project {:project-id project-id :name "Counted project"})
+        (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
+        (let [result (run-query ctx :todo/home-page {})
+              leaves (tree-seq coll? seq (:datastar/hiccup result))]
+          (is (= 1 (get-in result [:query/result :projects 0 :task-counts :active])))
+          (is (some #(= "1 active" %) leaves))))
       (testing "path/query params are validated and decoded through query processor"
         (let [result (run-query ctx :todo/tasks-page {})]
           (is (= [task-id] (map :task-id (:tasks (:query/result result)))))))
@@ -312,8 +319,6 @@
           (is (some #(= "Due" %) leaves))
           (is (not (some #(= "Edit details" %) leaves)))))
       (testing "project page query includes task counts from projections"
-        (process! ctx :todo/create-project {:project-id project-id :name "Counted project"})
-        (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
         (let [result (run-query ctx :todo/project-page {:project-id project-id})]
           (is (= 1 (get-in result [:query/result :project :task-counts :active])))
           (is (= [task-id] (map :task-id (get-in result [:query/result :tasks]))))))
@@ -391,6 +396,7 @@
           attrs (filter map? leaves)]
       (is (some #(= "Summary task" %) leaves))
       (is (some #(= "Summary project" %) leaves))
+      (is (some #(= "1 active" %) leaves))
       (is (= 1 (count (filter #(= "Due within 1 day" %) leaves))))
       (is (some #(= (str "/task?task-id=" task-id) (:href %)) attrs))
       (is (some #(= (str "/project?project-id=" project-id) (:href %)) attrs))))

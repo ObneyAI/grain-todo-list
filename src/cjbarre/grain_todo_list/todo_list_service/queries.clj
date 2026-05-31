@@ -8,7 +8,7 @@
   {:tasks (vec (rm/active-tasks ctx))
    :due-soon (vec (rm/due-soon-tasks ctx))
    :inactive (vec (rm/inactive-tasks ctx))
-   :projects (vec (rm/active-projects ctx))
+   :projects (vec (rm/active-project-summaries ctx))
    :project-summaries (vec (rm/project-summaries ctx))
    :review-projects (vec (rm/active-project-summaries ctx))
    :projects-without-next-action (vec (rm/projects-without-next-action ctx))
@@ -33,9 +33,10 @@
    :datastar/title "Tasks"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
   [ctx]
-  (let [tasks (vec (rm/active-tasks ctx))]
-    {:query/result {:tasks tasks :projects (vec (rm/active-projects ctx))}
-     :datastar/hiccup (ui/tasks-page {:tasks tasks :projects (vec (rm/active-projects ctx))})}))
+  (let [tasks (vec (rm/active-tasks ctx))
+        projects (vec (rm/active-project-summaries ctx))]
+    {:query/result {:tasks tasks :projects projects}
+     :datastar/hiccup (ui/tasks-page {:tasks tasks :projects projects})}))
 
 (defquery :todo task-page
   {:authorized? (constantly true)
@@ -44,7 +45,7 @@
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
   [{{:keys [task-id]} :query :as ctx}]
   (let [task (get (rm/all-tasks ctx) task-id)
-        projects (vec (rm/active-projects ctx))]
+        projects (vec (rm/active-project-summaries ctx))]
     {:query/result {:task task :projects projects}
      :datastar/hiccup (ui/task-page {:task task :projects projects})}))
 
@@ -65,15 +66,16 @@
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
   [{{:keys [project-id]} :query :as ctx}]
   (let [project (get (rm/all-projects ctx) project-id)
-        tasks (vec (rm/tasks-for-project ctx project-id))]
+        tasks (vec (rm/tasks-for-project ctx project-id))
+        projects (vec (rm/active-project-summaries ctx))]
     {:query/result {:project (when project
                                (assoc project :task-counts (rm/project-task-counts ctx project-id)))
                     :tasks tasks
-                    :projects (vec (rm/active-projects ctx))}
+                    :projects projects}
      :datastar/hiccup (ui/project-page {:project (when project
                                                    (assoc project :task-counts (rm/project-task-counts ctx project-id)))
                                         :tasks tasks
-                                        :projects (vec (rm/active-projects ctx))})}))
+                                        :projects projects})}))
 
 (defquery :todo review-page
   {:authorized? (constantly true)
