@@ -4,10 +4,10 @@
          :sha "5fef92a7db5907224982bbbdfff15bde947235b6"
          :deps/root "projects/grain-core-v2"}
 
-        obneyai/grain-datastar
+        obneyai/grain-datastar-v2
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "5fef92a7db5907224982bbbdfff15bde947235b6"
-         :deps/root "projects/grain-datastar"}
+         :sha "2903299f2223c8609ff1ba68f1642840641ed458"
+         :deps/root "projects/grain-datastar-v2"}
 
         obneyai/grain-event-store-sqlite-v3
         {:git/url "https://github.com/ObneyAI/grain.git"

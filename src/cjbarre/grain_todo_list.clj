@@ -8,7 +8,7 @@
             [ai.obney.grain.code-agent-tools.interface :as code-agent-tools]
             [ai.obney.grain.command-processor-v2.interface :as cp :refer [defcommand]]
             [ai.obney.grain.query-processor.interface :as query-processor :refer [defquery]]
-            [ai.obney.grain.datastar.interface :as ds]
+            [ai.obney.grain.datastar_v2.interface :as ds]
             [ai.obney.grain.event-store-v3.interface :as es :refer [->event]]
             [ai.obney.grain.read-model-processor-v2.interface :as rmp :refer [defreadmodel]]
             [ai.obney.grain.schema-util.interface :refer [defschemas]]
@@ -136,9 +136,9 @@
               {}
               {:datastar/shim-opts {:head datastar-head
                                      :html-attrs {:data-theme "workshop"}}})
-   #{["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]
-     ["/favicon.ico" :get [(fn [_] {:status 204 :body ""})] :route-name ::favicon]
-     ["/actions" :post [(ds/action-handler context {})] :route-name ::datastar-actions]}))
+   #{(ds/action-route context {})
+     ["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]
+     ["/favicon.ico" :get [(fn [_] {:status 204 :body ""})] :route-name ::favicon]}))
 
 (defmethod ig/init-key ::webserver [_ config]
   (ws/start
@@ -586,7 +586,7 @@
                             project-id (assoc :project-id project-id)
                             due-at (assoc :due-at due-at)
                             defer-until (assoc :defer-until defer-until))})]
-         :datastar/signals {:title "" :__toast "Task captured."}}))))
+         :datastar/signals {:__toast "Task captured."}}))))
 
 (defcommand :todo rename-task
   {:authorized? (constantly true)}
@@ -758,7 +758,7 @@
      [(->event {:type :todo/project-created
                 :tags #{[:project project-id]}
                 :body {:project-id project-id :name name :status :active}})]
-     :datastar/signals {:projectName "" :__toast "Project created."}}))
+     :datastar/signals {:__toast "Project created."}}))
 
 (defcommand :todo rename-project
   {:authorized? (constantly true)}

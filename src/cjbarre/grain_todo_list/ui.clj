@@ -1,5 +1,6 @@
 (ns cjbarre.grain-todo-list.ui
-  (:require [cjbarre.grain-todo-list.ui.components :as c]))
+  (:require [ai.obney.grain.datastar_v2.interface :as ds]
+            [cjbarre.grain-todo-list.ui.components :as c]))
 
 (defn shell [{:keys [title]} & body]
   (apply c/app-shell {:title title} body))
@@ -118,11 +119,11 @@
                (c/action-button {:label "Complete review"
                                  :class "btn-primary"
                                  :disabled? (not review-complete?)
-                                 :on-click (c/command-click "todo/complete-weekly-review"
-                                                            {:review-id (:review-id review)})})])
+                                 :on-click-attrs (ds/on-click-command :todo/complete-weekly-review
+                                                                 {:extra {:review-id (:review-id review)}})})])
             (c/action-button {:label "Start weekly review"
                               :class "btn-primary"
-                              :on-click "$['command/name'] = 'todo/start-weekly-review'; @post('/actions');"}))]))
+                              :on-click-attrs (ds/on-click-command :todo/start-weekly-review)}))]))
 
 (defn dev-gallery-page []
   (c/dev-gallery-page))

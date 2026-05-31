@@ -23,6 +23,29 @@
 (def later-string "2026-05-24T00:00:00Z")
 (def later-from-string (OffsetDateTime/parse later-string))
 
+(defn attr-key
+  [k]
+  (if (keyword? k)
+    (if-let [ns (namespace k)]
+      (str ns ":" (name k))
+      (name k))
+    k))
+
+(defn attr-value
+  [attrs k]
+  (or (get attrs k)
+      (get attrs (attr-key k))))
+
+(defn has-attr?
+  [attrs k]
+  (or (contains? attrs k)
+      (contains? attrs (attr-key k))))
+
+(defn data-on-key?
+  [k]
+  (let [s (attr-key k)]
+    (string/starts-with? s "data-on")))
+
 (defn test-context
   []
   (let [event-store (es/start {:conn {:type :in-memory}})
@@ -150,6 +173,8 @@
                                {:task-id task-id :title "Capture task" :bucket :inbox})]
           (is (not (anomaly? result)))
           (is (event-of-type result :todo/task-captured))
+          (is (= {:__toast "Task captured."} (:datastar/signals result)))
+          (is (not (contains? (:datastar/signals result) :title)))
           (is (= "Capture task" (get-in (project-tasks ctx) [task-id :title])))))
       (testing "invalid commands return anomalies and emit no events"
         (let [result (process! ctx :todo/capture-task {:title " "})]
@@ -194,8 +219,10 @@
   (with-context
    (fn [ctx]
      (testing "project commands go through Grain command processor"
-       (is (event-of-type (process! ctx :todo/create-project {:project-id project-id :name "Ship v1"})
-                          :todo/project-created))
+       (let [result (process! ctx :todo/create-project {:project-id project-id :name "Ship v1"})]
+         (is (event-of-type result :todo/project-created))
+         (is (= {:__toast "Project created."} (:datastar/signals result)))
+         (is (not (contains? (:datastar/signals result) :projectName))))
        (is (= "Ship v1" (get-in (project-projects ctx) [project-id :name])))
        (is (event-of-type (process! ctx :todo/rename-project {:project-id project-id :name "Ship v2"})
                           :todo/project-renamed))
@@ -253,9 +280,9 @@
               attrs (filter map? leaves)]
           (is (= "Render me" (get-in result [:query/result :task :title])))
           (is (not (some #(= "Rename" %) leaves)))
-          (is (some #(contains? % :data-on:blur) attrs))
-          (is (some #(contains? % :data-on:keydown) attrs))
-          (is (some #(contains? % :data-on:change) attrs))
+          (is (some #(has-attr? % :data-on:blur) attrs))
+          (is (some #(has-attr? % :data-on:keydown) attrs))
+          (is (some #(has-attr? % :data-on:change) attrs))
           (is (some #(= "Status" %) leaves))
           (is (some #(= "Bucket" %) leaves))
           (is (some #(= "Project" %) leaves))
@@ -440,12 +467,27 @@
       (is (some #(= "No active projects." %) leaves))
       (is (some #(= "No active projects to review." %) leaves))
       (is (not (some #(= "data-uidotsh-pick" %) leaves)))
-      (is (not (some (fn [[k _]]
-                       (and (keyword? k)
-                            (or (= "data-on" (namespace k))
-                                (string/starts-with? (name k) "data-on"))))
+      (is (not (some (fn [[k _]] (data-on-key? k))
                      (mapcat seq attrs))))
       (is (not (some #(and (string? %) (string/includes? % "@post('/actions')")) leaves)))))
+
+  (testing "home command forms scope signals so sibling forms cannot clobber commands"
+    (let [hiccup (ui/home-page {:buckets {:inbox [] :next [] :waiting [] :someday []}
+                                :deferred []
+                                :due-soon []
+                                :inactive []
+                                :projects []
+                                :review nil})
+          leaves (tree-seq coll? seq hiccup)
+          attrs (filter map? leaves)
+          signal-strings (keep :data-signals attrs)
+          submit-strings (keep #(attr-value % :data-on:submit__prevent) attrs)]
+      (is (some #(string/includes? % "quick-add-global-command/name") signal-strings))
+      (is (some #(string/includes? % "project-add-command/name") signal-strings))
+      (is (some #(string/includes? % "$['quick-add-global-command/name']") submit-strings))
+      (is (some #(string/includes? % "$['project-add-command/name']") submit-strings))
+      (is (not (some #(string/includes? % "'command/name': 'todo/capture-task'") signal-strings)))
+      (is (not (some #(string/includes? % "'command/name': 'todo/create-project'") signal-strings)))))
 
   (testing "cards stay minimal and task page owns the edit UI"
     (let [task {:task-id task-id
@@ -454,11 +496,13 @@
                 :status :active
                 :order 1000
                 :project-id project-id
-                :due-at later}
+                :due-at later
+                :defer-until later}
           card-leaves (tree-seq coll? seq (c/task-card task []))
           card-attrs (filter map? card-leaves)
           page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
-          page-attrs (filter map? page-leaves)]
+          page-attrs (filter map? page-leaves)
+          page-attr-values (filter string? (mapcat vals page-attrs))]
       (is (some #(= "Minimal card" %) card-leaves))
       (is (not (some #(= "open" %) card-leaves)))
       (is (some #(= (str "/task?task-id=" task-id) (:href %)) card-attrs))
@@ -468,9 +512,9 @@
       (is (some #(= "Due 2026-05-23" %) card-leaves))
       (is (not (some #(= "done" %) card-leaves)))
       (is (some #(= "Complete task" (:aria-label %)) card-attrs))
-      (is (some #(and (contains? % :data-on:click)
-                      (string? (:data-on:click %))
-                      (string/includes? (:data-on:click %) "todo/complete-task"))
+      (is (some #(and (has-attr? % :data-on:click)
+                      (string? (attr-value % :data-on:click))
+                      (string/includes? (attr-value % :data-on:click) "todo/complete-task"))
                 card-attrs))
       (is (not (some #(= "Edit details" %) card-leaves)))
       (is (some #(= "Status" %) page-leaves))
@@ -479,7 +523,36 @@
       (is (not (some #(= "canceled" %) page-leaves)))
       (is (some #(= "Bucket" %) page-leaves))
       (is (some #(= "Schedule" %) page-leaves))
-      (is (some #(contains? % :data-on:blur) page-attrs))
-      (is (some #(contains? % :data-on:change) page-attrs))
-      (is (some #(contains? % :data-on:keydown) page-attrs))
+      (is (some #(has-attr? % :data-on:blur) page-attrs))
+      (is (some #(has-attr? % :data-on:change) page-attrs))
+      (is (some #(has-attr? % :data-on:keydown) page-attrs))
+      (doseq [command-name ["todo/rename-task"
+                            "todo/assign-task-to-project"
+                            "todo/remove-task-from-project"
+                            "todo/set-task-due-at"
+                            "todo/clear-task-due-at"
+                            "todo/defer-task"
+                            "todo/clear-task-defer-date"]]
+        (is (some #(string/includes? % command-name) page-attr-values)
+            command-name))
       (is (not (some #(= "Edit details" %) page-leaves))))))
+
+(deftest datastar-v2-migration-tests
+  (testing "app source no longer uses deprecated Datastar string helpers"
+    (let [source (str (slurp "src/cjbarre/grain_todo_list.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/ui.clj")
+                      "\n"
+                      (slurp "src/cjbarre/grain_todo_list/ui/components.clj"))
+          deprecated-patterns ["command-click"
+                               "command-expr"
+                               "ds-str"
+                               "ds-assign"
+                               "signal-ref"
+                               "signal-map"
+                               "@post('/actions')"
+                               "@post($__grainAction)"
+                               "data-on-submit__prevent"
+                               "data-on-click"]]
+      (doseq [pattern deprecated-patterns]
+        (is (not (string/includes? source pattern)) pattern)))))

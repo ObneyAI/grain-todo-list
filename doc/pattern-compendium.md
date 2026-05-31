@@ -2,10 +2,11 @@
 
 This project is intentionally small. Build the app in a minimal Clojure layout rather than a Polylith layout.
 
-The goal is to keep nearly all application code in two files:
+The goal is to keep application code in a few obvious files:
 
-- `src/cjbarre/grain_todo_list.clj` - backend/system/domain file
-- `src/cjbarre/grain_todo_list/ui.clj` - UI/Hiccup file
+- `src/cjbarre/grain_todo_list.clj` - backend, Integrant system, domain logic, commands, read models, queries, routes
+- `src/cjbarre/grain_todo_list/ui.clj` - page-level pure Hiccup composition
+- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable UI components and Datastar v2 DSL usage
 
 Supporting files:
 
@@ -14,7 +15,7 @@ Supporting files:
 - `deps.edn` - Clojure classpath and dependencies
 - `package.json` - CSS build scripts
 
-No `bases/`, `components/`, `interface.clj`, or service bricks. If a pattern from Grain examples mentions those directories, translate it into the two-file structure above.
+No `bases/`, `components/`, `interface.clj`, or service bricks in this app. If a pattern from Grain examples mentions those directories, translate it into the files above.
 
 ---
 
@@ -27,36 +28,47 @@ Stack:
 - Clojure
 - Integrant
 - Grain event store, command routes, query routes, todo processors, periodic tasks
-- Datastar-style server-rendered UI through Grain query routes
+- Datastar v2 server-rendered UI through Grain query routes
 - Tailwind CSS and DaisyUI
 
-Current backend entry point:
+Use the current Grain Datastar v2 adapter:
+
+```clojure
+obneyai/grain-datastar-v2
+{:git/url "https://github.com/ObneyAI/grain.git"
+ :sha "..."
+ :deps/root "projects/grain-datastar-v2"}
+```
+
+Backend namespace pattern:
 
 ```clojure
 (ns cjbarre.grain-todo-list
   (:require [integrant.core :as ig]
             [com.brunobonacci.mulog :as u]
             [clojure.set :as set]
-            [ai.obney.grain.event-store-v3.interface :as es]
+            [ai.obney.grain.command-processor-v2.interface :as cp :refer [defcommand]]
+            [ai.obney.grain.query-processor.interface :as query-processor :refer [defquery]]
+            [ai.obney.grain.datastar_v2.interface :as ds]
+            [ai.obney.grain.event-store-v3.interface :as es :refer [->event]]
+            [ai.obney.grain.read-model-processor-v2.interface :as rmp :refer [defreadmodel]]
+            [ai.obney.grain.schema-util.interface :refer [defschemas]]
+            [ai.obney.grain.pubsub.interface :as ps]
             [ai.obney.grain.kv-store.interface :as kv]
             [ai.obney.grain.kv-store-lmdb.interface :as lmdb]
             [ai.obney.grain.todo-processor-v2.interface :as tp]
             [ai.obney.grain.periodic-task.interface :as pt]
             [ai.obney.grain.command-request-handler-v2.interface :as crh]
             [ai.obney.grain.query-request-handler.interface :as qrh]
-            [ai.obney.grain.webserver.interface :as ws]))
+            [ai.obney.grain.webserver.interface :as ws]
+            [cjbarre.grain-todo-list.ui :as ui]))
 ```
 
-Planned UI namespace:
+UI components that emit Datastar attributes should require the same v2 interface:
 
 ```clojure
-(ns cjbarre.grain-todo-list.ui)
-```
-
-The backend namespace should require the UI namespace once page/query rendering is added:
-
-```clojure
-[cjbarre.grain-todo-list.ui :as ui]
+(ns cjbarre.grain-todo-list.ui.components
+  (:require [ai.obney.grain.datastar_v2.interface :as ds]))
 ```
 
 ---
@@ -95,38 +107,48 @@ Suggested order:
 ;; REPL helpers
 ```
 
-### UI File
+### Page UI File
 
-Use `src/cjbarre/grain_todo_list/ui.clj` for UI concerns:
+Use `src/cjbarre/grain_todo_list/ui.clj` for page-level UI concerns:
 
 - pure Hiccup page functions
-- reusable Hiccup components
-- form helpers
-- table/list/empty-state helpers
-- Datastar attributes and signal helpers
-- formatting helpers that are only used for display
+- page composition from reusable components
+- route-specific page shells
+- light formatting that is only used by page composition
 
 UI functions should be pure. They receive data and return Hiccup. They should not read from the event store, mutate state, run commands, or access Integrant components.
 
 Example:
 
 ```clojure
-(ns cjbarre.grain-todo-list.ui)
+(ns cjbarre.grain-todo-list.ui
+  (:require [cjbarre.grain-todo-list.ui.components :as c]))
 
-(defn page-shell
-  [{:keys [title]} & body]
+(defn home-page
+  [{:keys [tasks projects]}]
   [:div#app
-   [:main {:class "min-h-screen bg-base-100 text-base-content"}
-    [:div {:class "mx-auto max-w-4xl px-4 py-8"}
-     [:h1 {:class "mb-6 text-2xl font-semibold"} title]
-     body]]])
+   (c/app-shell {:title "Grain Todo"}
+    (c/quick-add {})
+    (c/task-list tasks projects))])
 ```
+
+### Components UI File
+
+Use `src/cjbarre/grain_todo_list/ui/components.clj` for reusable Hiccup components and Datastar v2 DSL calls:
+
+- buttons, chips, fields, panels, lists, cards
+- command forms
+- command buttons
+- inline edit controls
+- stream repost controls for search, filters, and pagination
+
+Prefer adapter-owned DSL helpers over local string builders. New code should not create app-owned Datastar helpers that duplicate `ds/signal`, `ds/assign`, `ds/signals`, `ds/bind`, `ds/action-form`, `ds/on-click-command`, or `ds/on-command`.
 
 ---
 
 ## CSS
 
-The CSS build is already adapted to this project layout.
+The CSS build is adapted to this project layout.
 
 `package.json`:
 
@@ -198,57 +220,67 @@ Prefer adding small keys to this map over creating a new subsystem file.
 
 ### Routes
 
-Routes are assembled in the `::routes` Integrant key:
+Routes are assembled in the `::routes` Integrant key.
+
+Use `ds/routes` for Datastar query pages and `ds/action-route` for the standard command endpoint:
 
 ```clojure
 (defmethod ig/init-key ::routes [_ {:keys [context]}]
   (set/union
    (crh/routes context)
    (qrh/routes context)
-   #{["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]}))
+   (ds/routes context
+              {}
+              {:datastar/shim-opts {:head datastar-head
+                                     :html-attrs {:data-theme "workshop"}}})
+   #{(ds/action-route context {})
+     ["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]
+     ["/favicon.ico" :get [(fn [_] {:status 204 :body ""})] :route-name ::favicon]}))
 ```
 
-Keep route wiring here unless the file becomes genuinely hard to navigate.
+`ds/action-route` defaults to `POST /actions` and delegates to the v2 action handler. Prefer it over manually constructing the `/actions` route.
 
 ### Command Handlers
 
 Commands should live in the backend file under a command section.
 
-Use Grain command definitions from the relevant Grain command processor namespace. Keep each command small:
+Use Grain command definitions from the command processor namespace. Keep each command small:
 
 ```clojure
 ;; Command handlers
 
-(defcommand :todo create-item
+(defcommand :todo capture-task
   {:authorized? (constantly true)}
-  "Create a todo item."
-  [{{:keys [title]} :command :as ctx}]
+  "Capture a task."
+  [{{:keys [title bucket]} :command :as ctx}]
   (cond
     (not (seq title))
     {::anom/category ::anom/incorrect
      ::anom/message "Title is required."}
 
     :else
-    (let [item-id (random-uuid)]
+    (let [task-id (random-uuid)]
       {:command-result/events
-       [(->event {:type :todo/item-created
-                  :tags #{[:todo-item item-id]}
-                  :body {:item-id item-id
-                         :title title}})]
-       :datastar/signals {:title ""
-                          :__toast "Item added"}})))
+       [(->event {:type :todo/task-captured
+                  :tags #{[:todo-task task-id]}
+                  :body {:task-id task-id
+                         :title title
+                         :bucket bucket}})]
+       :datastar/signals {:__toast "Task captured."}})))
 ```
 
 Validation pattern:
 
 - return an anomaly for invalid input
 - return `:command-result/events` on success
-- return `:datastar/signals` when the UI should update local signals
+- return `:datastar/signals` for app-level feedback such as `:__toast`
+
+Do not return form field reset signals such as `:title ""` or `:projectName ""` from command handlers when the form is built with `ds/action-form`. Scoped form reset belongs to the adapter-owned form helper.
 
 Use event tags consistently:
 
 ```clojure
-:tags #{[:todo-item item-id]}
+:tags #{[:todo-task task-id]}
 ```
 
 ### Read Models
@@ -261,42 +293,43 @@ Pattern:
 ;; Read models
 
 (def todo-event-types
-  #{:todo/item-created
-    :todo/item-completed
-    :todo/item-deleted})
+  #{:todo/task-captured
+    :todo/task-completed
+    :todo/task-deleted})
 
-(defmulti todos* (fn [_state event] (:event/type event)))
+(defmulti tasks* (fn [_state event] (:event/type event)))
 
-(defmethod todos* :todo/item-created
-  [state {:keys [item-id title]}]
-  (assoc state item-id {:item-id item-id
+(defmethod tasks* :todo/task-captured
+  [state {:keys [task-id title bucket]}]
+  (assoc state task-id {:task-id task-id
                         :title title
-                        :completed? false}))
+                        :bucket bucket
+                        :status :active}))
 
-(defmethod todos* :todo/item-completed
-  [state {:keys [item-id]}]
-  (assoc-in state [item-id :completed?] true))
+(defmethod tasks* :todo/task-completed
+  [state {:keys [task-id]}]
+  (assoc-in state [task-id :status] :completed))
 
-(defmethod todos* :todo/item-deleted
-  [state {:keys [item-id]}]
-  (dissoc state item-id))
+(defmethod tasks* :todo/task-deleted
+  [state {:keys [task-id]}]
+  (dissoc state task-id))
 
-(defmethod todos* :default [state _event]
+(defmethod tasks* :default [state _event]
   state)
 
-(defreadmodel :todo items
+(defreadmodel :todo tasks
   {:events todo-event-types
    :version 1}
   [state event]
-  (todos* state event))
+  (tasks* state event))
 
-(defn get-items [ctx]
-  (->> (rmp/project ctx :todo/items)
+(defn get-tasks [ctx]
+  (->> (rmp/project ctx :todo/tasks)
        vals
        (sort-by :title)))
 ```
 
-Increment `:version` when the reducer behavior changes in a way that should rebuild cached projections.
+Increment `:version` when reducer behavior changes in a way that should rebuild cached projections.
 
 ### Query Handlers
 
@@ -305,42 +338,44 @@ Queries live in the backend file and call UI functions from `cjbarre.grain-todo-
 Static page:
 
 ```clojure
-(defquery :todo home-page
+(defquery :todo dev-gallery-page
   {:authorized? (constantly true)
-   :datastar/path "/"
-   :datastar/title "Todo"
-   :datastar/fps 0}
-  "Render the home page once."
-  [ctx]
+   :datastar/path "/dev/gallery"
+   :datastar/title "Dev UI Gallery"}
+  "Render the dev gallery once."
+  [_ctx]
   {:query/result {}
-   :datastar/hiccup (ui/home-page {})})
+   :datastar/hiccup (ui/dev-gallery-page)})
 ```
 
 Event-driven page:
 
 ```clojure
-(defquery :todo items-page
+(defquery :todo tasks-page
   {:authorized? (constantly true)
-   :datastar/path "/"
-   :datastar/title "Todo"
-   :grain/read-models {:todo/items 1}
+   :datastar/path "/tasks"
+   :datastar/title "Tasks"
+   :grain/read-models {:todo/tasks 1
+                       :todo/projects 1}
    :datastar/debounce-ms 50}
-  "Render todos and update when todo events arrive."
+  "Render tasks and update when todo events fire."
   [ctx]
-  (let [items (get-items ctx)]
-    {:query/result {:items items}
-     :datastar/hiccup (ui/items-page {:items items})}))
+  (let [tasks (get-tasks ctx)
+        projects (active-projects ctx)]
+    {:query/result {:tasks tasks
+                    :projects projects}
+     :datastar/hiccup (ui/tasks-page {:tasks tasks
+                                      :projects projects})}))
 ```
 
-Choose one render mode:
+Choose query behavior by metadata:
 
-| Mode | Metadata | Use for |
-|---|---|---|
-| One-shot | `:datastar/fps 0` | static pages |
-| Polling | `:datastar/fps N` | external data that changes outside events |
-| Event-driven | `:grain/read-models {...}` | app state stored through events |
+| Behavior | Metadata | Use for |
+| --- | --- | --- |
+| Static one-shot render | no `:grain/read-models` | static pages and galleries |
+| Event-driven render | `:grain/read-models {...}` | app state stored through events |
 
-Do not combine `:datastar/fps` with `:grain/read-models` on the same query.
+For Datastar v2 app guidance, do not use `:datastar/fps`. Use event-driven reads for Grain state, and use explicit stream repost helpers for signal-carrying reads such as search, filters, pagination, and typeahead.
 
 ### Todo Processors
 
@@ -350,14 +385,14 @@ Event-driven side effects live in the backend file.
 ;; Todo processors
 
 (defn send-follow-up
-  [{{:keys [item-id]} :event :as ctx}]
+  [{{:keys [task-id]} :event :as ctx}]
   ;; Dispatch a command, send a notification, etc.
   )
 
 (def todo-processors
   {:todo/send-follow-up
    {:handler-fn #'send-follow-up
-    :topics [:todo/item-created]}})
+    :topics [:todo/task-captured]}})
 ```
 
 Use var references (`#'send-follow-up`) so REPL reloading updates behavior without rebuilding the whole system.
@@ -369,18 +404,226 @@ Scheduled tasks live in the backend file.
 ```clojure
 ;; Periodic tasks
 
-(defn prune-completed-items
+(defn prune-completed-tasks
   [ctx _time]
   ;; scan read model, dispatch commands, or append events
   )
 
 (def periodic-tasks
-  {:todo/prune-completed-items
-   {:handler-fn #'prune-completed-items
+  {:todo/prune-completed-tasks
+   {:handler-fn #'prune-completed-tasks
     :schedule {:every 60 :duration :seconds}}})
 ```
 
 Keep periodic tasks idempotent. If a task can run twice, use event-store CAS or command-level validation to avoid duplicate effects.
+
+---
+
+## Datastar V2 DSL Patterns
+
+Use `ai.obney.grain.datastar_v2.interface` as the shallow, adapter-owned Datastar layer. Raw Datastar attributes still work as an escape hatch, but normal app code should prefer the DSL.
+
+### Literal Values And Raw Expressions
+
+Plain Clojure values are escaped as JavaScript literals:
+
+```clojure
+(ds/assign :task-id task-id)
+(ds/assign :bucket "next")
+```
+
+Use `ds/expr` only when the value is intentionally raw Datastar or JavaScript:
+
+```clojure
+(ds/assign :title (ds/expr "$evt.target.value"))
+(ds/assign :order (ds/expr "$order + 1"))
+```
+
+Use `ds/signal` when custom JavaScript must reference a signal:
+
+```clojure
+(str "if (" (ds/signal :title) ".trim()) { el.blur(); }")
+```
+
+### Signal Attributes
+
+Use `ds/signals` for explicit signal initialization:
+
+```clojure
+[:div (ds/signals {:title ""
+                   :bucket "inbox"})]
+```
+
+Use `ds/bind` for two-way input binding:
+
+```clojure
+[:input
+ (merge {:class "input input-bordered"
+         :aria-label "Task title"
+         :required true}
+        (ds/bind :title))]
+```
+
+Use `ds/show` and `ds/text` for standard reactive display:
+
+```clojure
+[:div (merge {:class "alert alert-error"} (ds/show "$error"))
+ [:span (ds/text "$error")]]
+```
+
+### Reads
+
+Read interactions update browser signals and repost to the current stream. The v2 shim initializes `$__grainStream`, so view code should not hardcode a stream route.
+
+Use these helpers for search, filters, pagination, tabs, and other signal-carrying reads:
+
+```clojure
+(ds/on-input-repost
+  {:debounce-ms 300
+   :assign {:search (ds/expr "$evt.target.value")}})
+
+(ds/on-change-repost
+  {:assign {:bucket (ds/expr "$evt.target.value")}})
+
+(ds/on-click-repost
+  {:assign {:page (ds/expr "$page + 1")}})
+```
+
+These helpers emit `@post($__grainStream)` and preserve the current SSE stream reuse behavior.
+
+### Command Buttons
+
+Use `ds/on-click-command` for button-like writes:
+
+```clojure
+(defn complete-action
+  [{:keys [task-id]}]
+  [:button
+   (merge {:class "status-action"
+           :type "button"
+           :aria-label "Complete task"}
+          (ds/on-click-command :todo/complete-task
+            {:extra {:task-id task-id}}))
+   "Complete"])
+```
+
+`on-click-command` sets `command/name`, applies `:extra` signal assignments, and posts to `$__grainAction`.
+
+### Conditional Command Writes
+
+Use `ds/on-command` when a browser event needs to submit a command only under a condition, derive a value before submit, or choose between two commands. Do not build these flows by concatenating `ds/assign-all` with raw `@post($__grainAction)`.
+
+For inline text edits, keep the raw JavaScript to the minimum expression positions owned by the DSL:
+
+```clojure
+(defn task-title-edit
+  [{:keys [task-id title title-signal]}]
+  [:input
+   (merge {:class "inline-edit-title"
+           :aria-label "Task title"
+           :type "text"}
+          (ds/bind title-signal)
+          (ds/on-command
+            :blur
+            {:let [['next (ds/expr (str (ds/signal title-signal) ".trim()"))]]
+             :when (ds/expr (str "next && next !== " (ds/lit title)))
+             :command :todo/rename-task
+             :extra {:task-id task-id
+                     :title (ds/expr "next")}}))])
+```
+
+For select controls that either set or clear a relationship, use the branch form:
+
+```clojure
+(ds/on-command
+  :change
+  (cond-> {:when (ds/expr (ds/signal project-signal))
+           :then {:command :todo/assign-task-to-project
+                  :extra {:task-id task-id
+                          :project-id (ds/expr (ds/signal project-signal))}}}
+    project-id
+    (assoc :else {:command :todo/remove-task-from-project
+                  :extra {:task-id task-id}})))
+```
+
+For date inputs, derive the ISO value with `:let` and branch between set and clear commands:
+
+```clojure
+(ds/on-command
+  :change
+  (cond-> {:let [['selected (ds/expr (ds/signal due-signal))]
+                 ['dueAt (ds/expr "new Date(selected + 'T00:00:00').toISOString()")]]
+           :when (ds/expr "selected")
+           :then {:command :todo/set-task-due-at
+                  :extra {:task-id task-id
+                          :due-at (ds/expr "dueAt")}}}
+    due-at
+    (assoc :else {:command :todo/clear-task-due-at
+                  :extra {:task-id task-id}})))
+```
+
+`on-command` posts through `$__grainAction`, sets `command/name`, and preserves event modifiers such as `:prevent?`, `:stop?`, and `:debounce-ms`. `:when` and `:let` values must be `ds/expr` because they are JavaScript contexts. `:extra` values are escaped as literals unless wrapped in `ds/expr`.
+
+### Command Forms
+
+Use `ds/action-form` for command forms. The helper owns Datastar behavior; the caller owns visual markup.
+
+```clojure
+(defn quick-add
+  [{:keys [bucket project-id]}]
+  (ds/action-form
+    {:command :todo/capture-task
+     :fields (cond-> {:title ""
+                      :bucket (name (or bucket :inbox))}
+               project-id (assoc :project-id project-id))}
+    [:input
+     (merge {:class "input input-bordered min-w-0 flex-1"
+             :aria-label "Task title"
+             :placeholder "Capture a task"
+             :required true}
+            (ds/bind :title))]
+    [:select
+     (merge {:class "select select-bordered sm:w-40"
+             :aria-label "Bucket"}
+            (ds/bind :bucket))
+     (for [[value label] bucket-labels]
+       [:option {:key value :value (name value)} label])]
+    [:button {:type "submit" :class "btn btn-primary"} "Add"]))
+```
+
+`action-form` initializes signals, sets `command/name`, clears `error` and `fieldErrors`, and posts to `$__grainAction`.
+
+### Scoped Forms
+
+Use `ds/with-scope` when multiple forms on the same page share field names:
+
+```clojure
+(ds/with-scope (str "project-" project-id)
+  (ds/action-form
+    {:command :todo/rename-project
+     :fields {:project-id project-id
+              :name name}}
+    [:input
+     (merge {:class "inline-edit"
+             :aria-label "Project name"}
+            (ds/bind :name))]))
+```
+
+Inside the scope, `ds/bind` creates scoped browser signals. On submit, `action-form` copies scoped field values into unscoped command fields before posting, then restores previous unscoped values so sibling forms are not clobbered.
+
+### Reserved Shim Signals
+
+Generated Datastar v2 shim pages initialize these adapter-owned signals:
+
+| Signal | Purpose |
+| --- | --- |
+| `__grainStream` | Current page stream endpoint, including resolved path params and nonce |
+| `__grainAction` | Command endpoint, defaulting to `/actions` |
+| `dsNonce` | Page-load nonce used for stream reuse and tab isolation |
+| `error` | Standard command/query error signal |
+| `fieldErrors` | Standard field error map signal |
+
+Application code may read `error` and `fieldErrors` for display. Do not overwrite `__grainStream`, `__grainAction`, or `dsNonce`.
 
 ---
 
@@ -391,24 +634,22 @@ Keep periodic tasks idempotent. If a task can run twice, use event-store CAS or 
 Every Datastar page should return a `div#app` root so the server can patch the page consistently.
 
 ```clojure
-(defn items-page
-  [{:keys [items]}]
+(defn tasks-page
+  [{:keys [tasks projects]}]
   [:div#app
-   [:div {:class "min-h-screen bg-base-100"}
-    [:main {:class "mx-auto max-w-4xl px-4 py-8"}
+   [:main {:class "min-h-screen bg-base-100"}
+    [:div {:class "mx-auto max-w-4xl px-4 py-8"}
      [:header {:class "mb-6 flex items-center justify-between gap-4"}
-      [:h1 {:class "text-2xl font-semibold"} "Todo"]
-      [:button {:class "btn btn-primary btn-sm"
-                :data-on-click "$addOpen = true"}
-       "Add"]]
-     (if (seq items)
-       (items-list items)
-       (empty-state "No items yet."))]]])
+      [:h1 {:class "text-2xl font-semibold"} "Tasks"]]
+     (c/quick-add {})
+     (if (seq tasks)
+       (c/task-list tasks projects)
+       (c/empty-state "No tasks yet."))]]])
 ```
 
 ### Small Components
 
-Prefer tiny functions in the UI file over a broad component library:
+Prefer small component functions over a broad component library:
 
 ```clojure
 (defn empty-state [message]
@@ -416,85 +657,62 @@ Prefer tiny functions in the UI file over a broad component library:
    message])
 
 (defn field
-  [{:keys [label data-bind type required?]}]
+  [{:keys [label signal-name type required?]}]
   [:label {:class "form-control w-full"}
    [:div {:class "label"} [:span {:class "label-text"} label]]
-   [:input {:type (or type "text")
-            :data-bind data-bind
+   [:input
+    (merge {:type (or type "text")
             :required required?
-            :class "input input-bordered w-full"}]])
+            :class "input input-bordered w-full"}
+           (ds/bind signal-name))]])
 ```
 
-### Datastar Signals
+### Error Display
 
-Use plain `data-*` attributes directly until repetition justifies helpers.
-
-Common attributes:
-
-| Attribute | Purpose |
-|---|---|
-| `data-signals` | initial signal values |
-| `data-bind` | two-way bind input value |
-| `data-show` | show/hide element |
-| `data-text` | render signal text |
-| `data-on-click` or `data-on:click` | click behavior |
-| `data-on-submit__prevent` or `data-on:submit__prevent` | intercept form submit |
-
-Example in-page command submission:
+Use the adapter-owned `error` signal for top-level command failures:
 
 ```clojure
-[:form {:data-on-submit__prevent
-        "$['command/name'] = 'todo/create-item'; @post('/actions')"}
- (field {:label "Title" :data-bind "title" :required? true})
- [:button {:type "submit" :class "btn btn-primary"} "Add"]]
+(defn action-error []
+  [:div (merge {:class "alert alert-error mb-4"} (ds/show "$error"))
+   [:span (ds/text "$error")]])
 ```
 
-Use signal names intentionally:
-
-| Prefix | Meaning |
-|---|---|
-| none | domain/input signal sent to server, such as `$title` |
-| `_` | local UI-only signal, such as `$_menuOpen` |
-| `__` | framework/internal signal, such as `$__toast` |
-| `command/name` | command selected for action submission |
-
-### Forms
-
-For normal app actions, prefer Datastar submissions that call command routes and patch the existing page.
-
-For browser-level flows that need a redirect or cookies, use a regular HTML form and a normal POST route.
-
-Minimal Datastar form:
-
-```clojure
-(defn add-item-form []
-  [:form {:class "space-y-4"
-          :data-on-submit__prevent
-          "$['command/name'] = 'todo/create-item'; @post('/actions')"}
-   (field {:label "Title" :data-bind "title" :required? true})
-   [:div {:data-show "$error" :class "alert alert-error"}
-    [:span {:data-text "$error"}]]
-   [:button {:type "submit" :class "btn btn-primary"} "Add item"]])
-```
+Field-level errors should read from `fieldErrors` when commands return field error maps.
 
 ### Lists
 
 Keep list rendering boring and durable:
 
 ```clojure
-(defn items-list [items]
+(defn task-list [tasks projects]
   [:ul {:class "divide-y divide-base-300 rounded-box border border-base-300"}
-   (for [{:keys [item-id title completed?]} items]
-     [:li {:key item-id
+   (for [{:keys [task-id title status]} tasks]
+     [:li {:key task-id
            :class "flex items-center justify-between gap-4 p-3"}
-      [:span {:class (when completed? "line-through opacity-60")} title]
-      [:button {:class "btn btn-ghost btn-sm"
-                :data-on-click
-                (str "$['command/name'] = 'todo/complete-item'; "
-                     "$['item-id'] = '" item-id "'; "
-                     "@post('/actions')")}
+      [:span {:class (when (= status :completed) "line-through opacity-60")} title]
+      [:button
+       (merge {:class "btn btn-ghost btn-sm"
+               :type "button"}
+              (ds/on-click-command :todo/complete-task
+                {:extra {:task-id task-id}}))
        "Done"]])])
 ```
+
+---
+
+## Avoid These Old Patterns
+
+Do not use these patterns for new code:
+
+- hand-built command submissions that post directly to `/actions`
+- hand-built conditional command submissions that concatenate `if (...)`, `ds/assign-all`, and `@post($__grainAction)` instead of using `ds/on-command`
+- app-owned helpers such as `command-click`, `command-expr`, `ds-str`, `ds-assign`, or `signal-ref`
+- raw `data-signals` strings when `ds/signals` or `ds/action-form` can own signal initialization
+- old kebabless event attrs such as `:data-on-click` when the DSL can emit attrs
+- `:datastar/fps` query metadata in Datastar v2 app guidance
+- raw signal reference strings when `ds/signal` can build the reference safely
+
+Only keep raw Datastar strings when the DSL does not yet cover a needed behavior. Conditional command submissions are covered by `ds/on-command`; raw JavaScript inside them should be limited to explicit `ds/expr` conditions and derived values.
 
 ---
 
@@ -506,13 +724,40 @@ For this project, do not create a new component or service directory. Add the fe
 2. Add read helper functions in the same backend file.
 3. Add command handlers in the same backend file.
 4. Add query handlers in the same backend file.
-5. Add pure page/component functions to `src/cjbarre/grain_todo_list/ui.clj`.
-6. Make the query call the UI function.
-7. Add route or action wiring in the existing `::routes` Integrant key only if the Grain route helpers do not already provide it.
-8. Run `npm run css:build` after adding new Tailwind classes.
-9. Start the app from the REPL with `(def app (start))`.
+5. Add pure page functions to `src/cjbarre/grain_todo_list/ui.clj`.
+6. Add or update reusable components in `src/cjbarre/grain_todo_list/ui/components.clj`.
+7. Make the query call the UI function.
+8. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
+9. Add route wiring in `::routes` only if the Grain route helpers do not already provide it.
+10. Run `npm run css:build` after adding new Tailwind classes.
+11. Start the app from the REPL with `(def app (start))`.
 
-Only split a new namespace out when the two-file structure is clearly slowing development down.
+Only split a new namespace out when the current file structure is clearly slowing development down.
+
+---
+
+## Migration Checklist To Datastar V2
+
+Use this checklist when migrating this app from the deprecated adapter patterns to v2:
+
+1. Depend on `obneyai/grain-datastar-v2`.
+2. Change backend and UI component requires to `ai.obney.grain.datastar_v2.interface`.
+3. Use `ds/action-route` for the standard command endpoint.
+4. Replace manual command string helpers with `ds/on-click-command`, `ds/on-command`, and `ds/action-form`.
+5. Convert quick-add and project-add forms to `ds/action-form`.
+6. Convert status buttons, chips, review actions, and primary actions to `ds/on-click-command`.
+7. Convert inline rename, select assign/clear, and date set/clear flows to `ds/on-command`.
+8. Convert hand-built `data-signals` strings to `ds/signals` or `ds/action-form`.
+9. Use `ds/on-input-repost`, `ds/on-change-repost`, and `ds/on-click-repost` for signal-carrying read interactions.
+10. Remove `:datastar/fps` from query examples and app guidance.
+11. Run the test suite.
+12. Grep for old patterns:
+
+```sh
+rg -n ":datastar/fps|@post\\('/actions'\\)|@post\\(\\$__grainAction\\)|data-on-submit__prevent|data-on-click|command-click|command-expr|ds-str|ds-assign|signal-ref" src doc
+```
+
+Any remaining matches should be either removed or clearly justified as an escape hatch. In normal UI component code, `@post($__grainAction)` should appear only in adapter output, tests that assert generated output, or rare JavaScript that the DSL does not yet cover.
 
 ---
 
@@ -547,13 +792,23 @@ If a page does not update after a command:
 - confirm the event type is included in the read model
 - confirm the query metadata includes the read model in `:grain/read-models`
 - confirm `:query/result` changes when the underlying data changes
+- confirm the page is rendered by a Datastar v2 route
 
 If a command appears to do nothing:
 
 - test the command directly in the REPL
 - check authorization
-- check that command fields match signal names
+- check that command fields match submitted signal names
+- check that `ds/action-route` is present in `::routes`
+- check that command buttons/forms post through `$__grainAction`
 - check that event maps contain the expected `:type`, `:tags`, and `:body`
+
+If a signal-carrying read does not re-render:
+
+- confirm the control uses `ds/on-input-repost`, `ds/on-change-repost`, `ds/on-click-repost`, or `ds/repost-stream`
+- confirm the query reads the submitted signal from request/query context
+- confirm the stream route is generated by `ds/routes`
+- confirm the shim-owned `$__grainStream` signal is present
 
 If CSS is missing:
 
@@ -568,13 +823,13 @@ If CSS is missing:
 When reading Grain or Polylith examples, translate paths like this:
 
 | Example path | This project |
-|---|---|
+| --- | --- |
 | `bases/web-api/src/.../core.clj` | `src/cjbarre/grain_todo_list.clj` |
 | `components/{service}/core/commands.clj` | command section in `src/cjbarre/grain_todo_list.clj` |
 | `components/{service}/core/queries.clj` | query section in `src/cjbarre/grain_todo_list.clj` |
 | `components/{service}/core/read_models.clj` | read model section in `src/cjbarre/grain_todo_list.clj` |
-| `components/{service}/core/views.clj` | `src/cjbarre/grain_todo_list/ui.clj` |
-| `components/{service}/interface.clj` | no equivalent; require the local namespace directly |
+| `components/{service}/core/views.clj` | `src/cjbarre/grain_todo_list/ui.clj` or `src/cjbarre/grain_todo_list/ui/components.clj` |
+| `components/{service}/interface.clj` | no app-local equivalent; require the local namespace directly |
 | `bases/web-api/resources/.../public/css/main.css` | `resources/public/css/main.css` |
 
 Keep the conceptual patterns. Drop the Polylith ceremony.
