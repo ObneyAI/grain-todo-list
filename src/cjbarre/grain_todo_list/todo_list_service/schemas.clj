@@ -32,23 +32,45 @@
     (string? x) (OffsetDateTime/parse x)
     :else x))
 
-(defschemas todo-schemas
+(defschemas common-schemas
   {::non-blank-string [:fn {:error/message "Must not be blank"} non-blank-string?]
    ::offset-date-time-input [:fn {:error/message "Must be an offset date time"} offset-date-time-input?]
    ::bucket [:enum :inbox :next :waiting :someday]
    ::task-status [:enum :active :completed :canceled :archived]
    ::project-status [:enum :active :completed :canceled]
+   ::review-status [:enum :active :completed]
    ::order number?
+   ::task-counts [:map
+                  [:active nat-int?]
+                  [:completed nat-int?]
+                  [:canceled {:optional true} nat-int?]
+                  [:archived {:optional true} nat-int?]]
+   ::task [:map
+           [:task-id :uuid]
+           [:title ::non-blank-string]
+           [:bucket ::bucket]
+           [:status ::task-status]
+           [:order ::order]
+           [:project-id {:optional true} :uuid]
+           [:due-at {:optional true} :time/offset-date-time]
+           [:defer-until {:optional true} :time/offset-date-time]]
+   ::project [:map
+              [:project-id :uuid]
+              [:name ::non-blank-string]
+              [:status ::project-status]
+              [:task-counts {:optional true} ::task-counts]]
+   ::weekly-review [:map
+                    [:review-id :uuid]
+                    [:status ::review-status]
+                    [:started-at :time/offset-date-time]
+                    [:reviewed-project-ids [:set :uuid]]
+                    [:reviewed-buckets [:set ::bucket]]
+                    [:completed-at {:optional true} :time/offset-date-time]]})
 
+(defschemas event-schemas
+  {
    :todo/task-captured
-   [:map [:task-id :uuid]
-    [:title ::non-blank-string]
-    [:bucket ::bucket]
-    [:status ::task-status]
-    [:order ::order]
-    [:project-id {:optional true} :uuid]
-    [:due-at {:optional true} :time/offset-date-time]
-    [:defer-until {:optional true} :time/offset-date-time]]
+   ::task
    :todo/task-renamed [:map [:task-id :uuid] [:title ::non-blank-string]]
    :todo/task-moved-to-bucket [:map [:task-id :uuid] [:bucket ::bucket] [:order ::order]]
    :todo/task-assigned-to-project [:map [:task-id :uuid] [:project-id :uuid]]
@@ -72,8 +94,10 @@
    :todo/weekly-review-started [:map [:review-id :uuid] [:started-at :time/offset-date-time]]
    :todo/project-reviewed [:map [:review-id :uuid] [:project-id :uuid]]
    :todo/bucket-reviewed [:map [:review-id :uuid] [:bucket ::bucket]]
-   :todo/weekly-review-completed [:map [:review-id :uuid] [:completed-at :time/offset-date-time]]
+   :todo/weekly-review-completed [:map [:review-id :uuid] [:completed-at :time/offset-date-time]]})
 
+(defschemas command-schemas
+  {
    :todo/capture-task
    [:map [:title ::non-blank-string]
     [:task-id {:optional true} :uuid]
@@ -105,8 +129,10 @@
    :todo/start-weekly-review [:map [:review-id {:optional true} :uuid]]
    :todo/mark-project-reviewed [:map [:review-id :uuid] [:project-id :uuid]]
    :todo/mark-bucket-reviewed [:map [:review-id :uuid] [:bucket ::bucket]]
-   :todo/complete-weekly-review [:map [:review-id :uuid]]
+   :todo/complete-weekly-review [:map [:review-id :uuid]]})
 
+(defschemas query-schemas
+  {
    :todo/home-page [:map]
    :todo/tasks-page [:map [:bucket {:optional true} ::bucket]]
    :todo/task-page [:map [:task-id :uuid]]
@@ -114,3 +140,8 @@
    :todo/project-page [:map [:project-id :uuid]]
    :todo/review-page [:map]
    :todo/dev-gallery-page [:map]})
+
+(defschemas read-model-schemas
+  {:todo/tasks [:map-of :uuid ::task]
+   :todo/projects [:map-of :uuid ::project]
+   :todo/weekly-review [:maybe ::weekly-review]})

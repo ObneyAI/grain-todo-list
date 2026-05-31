@@ -146,10 +146,41 @@
                      :bucket :next
                      :status :active
                      :order 1000})))
+    (is (m/validate :todo/tasks
+                    {task-id {:task-id task-id
+                              :title "Projected task"
+                              :bucket :next
+                              :status :active
+                              :order 1000
+                              :project-id project-id
+                              :due-at later
+                              :defer-until later}}))
+    (is (m/validate :todo/projects
+                    {project-id {:project-id project-id
+                                 :name "Projected project"
+                                 :status :active
+                                 :task-counts {:active 1
+                                               :completed 0
+                                               :canceled 0
+                                               :archived 0}}}))
+    (is (m/validate :todo/weekly-review nil))
+    (is (m/validate :todo/weekly-review
+                    {:review-id review-id
+                     :status :active
+                     :started-at now
+                     :reviewed-project-ids #{project-id}
+                     :reviewed-buckets #{:inbox :next}}))
+    (is (m/validate :todo/tasks-page
+                    (query :todo/tasks-page {:bucket :inbox}))))
   (testing "invalid payloads fail schema validation"
     (is (not (m/validate :todo/capture-task (command :todo/capture-task {:title "  "}))))
     (is (not (m/validate :todo/capture-task (command :todo/capture-task {:title "x" :bucket :bad}))))
-    (is (not (m/validate :todo/set-task-due-at (command :todo/set-task-due-at {:task-id task-id :due-at "tomorrow"}))))))
+    (is (not (m/validate :todo/set-task-due-at (command :todo/set-task-due-at {:task-id task-id :due-at "tomorrow"}))))
+    (is (not (m/validate :todo/tasks
+                         {task-id {:task-id task-id
+                                   :title "Missing status"
+                                   :bucket :next
+                                   :order 1000}}))))
 
 (deftest pure-reducer-and-helper-tests
   (testing "task reducer is pure and reconstructs state from event maps"
@@ -166,6 +197,7 @@
                                               :order 2000})
                     (todo-read-models/tasks* {:event/type :todo/task-completed
                                               :task-id task-id}))]
+      (is (m/validate :todo/tasks state))
       (is (= :completed (get-in state [task-id :status])))
       (is (= :next (get-in state [task-id :bucket])))))
   (testing "pure ordering helper sorts by order then title"
@@ -233,6 +265,7 @@
          (is (= {:__toast "Project created."} (:datastar/signals result)))
          (is (not (contains? (:datastar/signals result) :projectName))))
        (is (= "Ship v1" (get-in (project-projects ctx) [project-id :name])))
+       (is (m/validate :todo/projects (project-projects ctx)))
        (is (event-of-type (process! ctx :todo/rename-project {:project-id project-id :name "Ship v2"})
                           :todo/project-renamed))
        (is (= "Ship v2" (get-in (project-projects ctx) [project-id :name]))))
@@ -329,6 +362,7 @@
         (process! ctx :todo/create-project {:project-id project-id :name "Review project"})
         (process! ctx :todo/start-weekly-review {:review-id review-id})
         (is (= :active (:status (project-review ctx))))
+        (is (m/validate :todo/weekly-review (project-review ctx)))
         (is (= ::anom/conflict
                (::anom/category (process! ctx :todo/complete-weekly-review {:review-id review-id})))))
       (testing "project review commands validate active projects through the processor"

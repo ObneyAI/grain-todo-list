@@ -5,7 +5,7 @@ This project is intentionally small. Build the app in a minimal Clojure layout r
 The goal is to keep application code in a few obvious places:
 
 - `src/cjbarre/grain_todo_list.clj` - application composition, Integrant system, routes, lifecycle
-- `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` - schema constants, validation helpers, and `defschemas`
+- `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` - schema constants, validation helpers, and primitive-specific `defschemas`
 - `src/cjbarre/grain_todo_list/todo_list_service/read_models.clj` - read model reducers, `defreadmodel`s, and projection helpers
 - `src/cjbarre/grain_todo_list/todo_list_service/commands.clj` - command helpers and `defcommand`s
 - `src/cjbarre/grain_todo_list/todo_list_service/queries.clj` - query data assembly and `defquery`s
@@ -103,7 +103,7 @@ Do not put todo domain logic, command handlers, query handlers, schemas, read mo
 
 Use `src/cjbarre/grain_todo_list/todo_list_service/` for todo domain behavior:
 
-- `schemas.clj` owns enum constants, validation helpers, and `defschemas`.
+- `schemas.clj` owns enum constants, validation helpers, and separate `defschemas` forms for common types, events, commands, queries, and read models.
 - `read_models.clj` owns event-type sets, reducer multimethods, `defreadmodel`s, and projection helper functions.
 - `commands.clj` owns anomaly helpers, command helper functions, and `defcommand`s.
 - `queries.clj` owns query data assembly and `defquery`s.
@@ -744,12 +744,13 @@ For this project, add todo behavior inside the existing local service component.
 3. Add command handlers in `todo_list_service/commands.clj`.
 4. Add query handlers and query data assembly in `todo_list_service/queries.clj`.
 5. Add pure page functions to `todo_list_service/ui.clj`.
-6. Add or update reusable UI elements in `src/cjbarre/grain_todo_list/ui/components.clj`.
-7. Make the query call the service UI function.
-8. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
-9. Add route wiring in the root `::routes` only if the Grain route helpers do not already provide it.
-10. Run `npm run css:build` after adding new Tailwind classes.
-11. Start the app from the REPL with `(def app (app/start))`.
+6. Add or update read-model state schemas in `read-model-schemas` when projection shapes change.
+7. Add or update reusable UI elements in `src/cjbarre/grain_todo_list/ui/components.clj`.
+8. Make the query call the service UI function.
+9. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
+10. Add route wiring in the root `::routes` only if the Grain route helpers do not already provide it.
+11. Run `npm run css:build` after adding new Tailwind classes.
+12. Start the app from the REPL with `(def app (app/start))`.
 
 Only add another service directory if the app grows a second domain with its own schemas, commands, queries, read models, and UI.
 
