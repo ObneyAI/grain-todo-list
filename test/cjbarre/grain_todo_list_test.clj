@@ -496,7 +496,7 @@
                      (mapcat seq attrs))))
       (is (not (some #(and (string? %) (string/includes? % "@post('/actions')")) leaves)))))
 
-  (testing "home command forms scope signals so sibling forms cannot clobber commands"
+  (testing "home command forms initialize plain Datastar command signals"
     (let [hiccup (ui/home-page {:tasks []
                                 :due-soon []
                                 :inactive []
@@ -506,12 +506,15 @@
           attrs (filter map? leaves)
           signal-strings (keep :data-signals attrs)
           submit-strings (keep #(attr-value % :data-on:submit__prevent) attrs)]
-      (is (some #(string/includes? % "quick-add-global-command/name") signal-strings))
-      (is (some #(string/includes? % "project-add-command/name") signal-strings))
-      (is (some #(string/includes? % "$['quick-add-global-command/name']") submit-strings))
-      (is (some #(string/includes? % "$['project-add-command/name']") submit-strings))
-      (is (not (some #(string/includes? % "'command/name': 'todo/capture-task'") signal-strings)))
-      (is (not (some #(string/includes? % "'command/name': 'todo/create-project'") signal-strings)))))
+      (is (some #(string/includes? % "\"quick_add_global_title\":\"\"") signal-strings))
+      (is (some #(string/includes? % "\"project_add_name\":\"\"") signal-strings))
+      (is (every? #(string/includes? % "@post($__grainAction)") submit-strings))
+      (is (some #(string/includes? % "todo/capture-task") submit-strings))
+      (is (some #(string/includes? % "todo/create-project") submit-strings))
+      (is (some #(string/includes? % "$[\"title\"] = $[\"quick_add_global_title\"]") submit-strings))
+      (is (some #(string/includes? % "$[\"name\"] = $[\"project_add_name\"]") submit-strings))
+      (is (some #(string/includes? % "$[\"quick_add_global_title\"] = ''") submit-strings))
+      (is (some #(string/includes? % "$[\"project_add_name\"] = ''") submit-strings))))
 
   (testing "cards stay minimal and task page owns the edit UI"
     (let [task {:task-id task-id
@@ -558,7 +561,7 @@
       (is (not (some #(= "Edit details" %) page-leaves))))))
 
 (deftest datastar-v2-migration-tests
-  (testing "app source no longer uses deprecated Datastar string helpers"
+  (testing "app source uses plain Datastar attributes instead of removed adapter UI DSL"
     (let [source (str (slurp "src/cjbarre/grain_todo_list.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/ui.clj")
@@ -576,14 +579,18 @@
                       (slurp "src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/ui/components.clj"))
-          deprecated-patterns ["command-click"
-                               "command-expr"
-                               "ds-str"
-                               "ds-assign"
-                               "signal-ref"
-                               "signal-map"
+          deprecated-patterns ["ds/action-form"
+                               "ds/bind"
+                               "ds/signals"
+                               "ds/on-command"
+                               "ds/on-click-command"
+                               "ds/show"
+                               "ds/text"
+                               "ds/expr"
+                               "ds/lit"
+                               "ds/assign"
+                               "ds/with-scope"
                                "@post('/actions')"
-                               "@post($__grainAction)"
                                "data-on-submit__prevent"
                                "data-on-click"]]
       (doseq [pattern deprecated-patterns]

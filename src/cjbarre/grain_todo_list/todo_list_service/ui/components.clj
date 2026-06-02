@@ -1,7 +1,6 @@
 (ns cjbarre.grain-todo-list.todo-list-service.ui.components
-  (:require [ai.obney.grain.datastar_v2.interface :as ds]
-            [cjbarre.grain-todo-list.ui.components
-             :refer [action-button badge badge-row chip chip-row empty-state form-class metadata-text page-section page-title panel product-label section-title select-field signal-suffix status-action surface surface-class text-field]]
+  (:require [cjbarre.grain-todo-list.ui.components
+             :refer [action-button badge badge-row chip chip-row command-assignments command-click data-signals empty-state form-class js-literal metadata-text page-section page-title panel product-label section-title select-field signal-ref signal-suffix status-action surface surface-class text-field]]
             [clojure.string :as string]))
 
 (defn date-value
@@ -29,7 +28,18 @@
                   :on-click-attrs on-click-attrs}))
 (defn due-within-field
   [{:keys [signal-name value id-value]}]
-  (let [input-id (str signal-name "-input")]
+  (let [input-id (str signal-name "-input")
+        change-js (str "const raw = " (signal-ref signal-name) "; "
+                       "if (raw !== '' && raw !== null) { "
+                       (command-assignments :todo/set-task-due-within
+                                            [[:task-id (js-literal id-value)]
+                                             [:due-within-days "Number(raw)"]])
+                       " @post($__grainAction); }"
+                       (when value
+                         (str " else { "
+                              (command-assignments :todo/clear-task-due-within
+                                                   [[:task-id (js-literal id-value)]])
+                              " @post($__grainAction); }")))]
     [:div {:class "due-within-control"}
      [:label {:class "due-within-label" :for input-id} "Due within"]
      [:div {:class "due-within-input-wrap"}
@@ -42,69 +52,65 @@
                       :step "1"
                       :inputmode "numeric"
                       :placeholder "0"}
-                     (ds/bind signal-name)
-                     (ds/on-command
-                      :change
-                      (cond-> {:let [['raw (ds/expr (ds/signal signal-name))]]
-                               :when (ds/expr "raw !== '' && raw !== null")
-                               :then {:command :todo/set-task-due-within
-                                      :extra [[:task-id id-value]
-                                              [:due-within-days (ds/expr "Number(raw)")]]}}
-                        value
-                        (assoc :else {:command :todo/clear-task-due-within
-                                      :extra [[:task-id id-value]]}))))]
+                     {:data-bind signal-name
+                      :data-on:change change-js})]
       [:span {:class "due-within-unit"} "days"]]]))
 
 (defn quick-add [{:keys [project-id]}]
-  (ds/with-scope (str "quick-add-" (or project-id "global"))
+  (let [title-signal (str "quick_add_" (signal-suffix (or project-id "global")) "_title")
+        submit-js (str (command-assignments :todo/capture-task
+                                            (cond-> [[:title (signal-ref title-signal)]]
+                                              project-id
+                                              (conj [:project-id (js-literal project-id)])))
+                       " @post($__grainAction); "
+                       (signal-ref title-signal) " = '';")]
     (form-class
-     (ds/action-form
-      {:command :todo/capture-task
-       :fields (cond-> {:title ""}
-                 project-id (assoc :project-id project-id))
-       :reset-on-success? true}
-      [:input (merge {:class "input input-bordered min-w-0 flex-1"
-                      :aria-label "Task title"
-                      :placeholder "Add a task"
-                      :required true}
-                     (ds/bind :title))]
-      (action-button {:label "Add" :class "btn-primary" :type "submit"}))
+     [:form {:data-signals (data-signals {title-signal ""})
+             :data-on:submit__prevent submit-js}
+      [:input {:class "input input-bordered min-w-0 flex-1"
+               :aria-label "Task title"
+               :placeholder "Add a task"
+               :required true
+               :data-bind title-signal}]
+      (action-button {:label "Add" :class "btn-primary" :type "submit"})]
      (surface-class :form nil))))
 
 (defn project-add []
-  (ds/with-scope "project-add"
+  (let [name-signal "project_add_name"
+        submit-js (str (command-assignments :todo/create-project
+                                            [[:name (signal-ref name-signal)]])
+                       " @post($__grainAction); "
+                       (signal-ref name-signal) " = '';")]
     (form-class
-     (ds/action-form
-      {:command :todo/create-project
-       :fields {:name ""}
-       :reset-on-success? true}
-      [:input (merge {:class "input input-bordered min-w-0 flex-1"
-                      :aria-label "Project name"
-                      :placeholder "New project"
-                      :required true}
-                     (ds/bind :name))]
-      (action-button {:label "Create project" :class "btn-outline" :type "submit"}))
+     [:form {:data-signals (data-signals {name-signal ""})
+             :data-on:submit__prevent submit-js}
+      [:input {:class "input input-bordered min-w-0 flex-1"
+               :aria-label "Project name"
+               :placeholder "New project"
+               :required true
+               :data-bind name-signal}]
+      (action-button {:label "Create project" :class "btn-outline" :type "submit"})]
      (surface-class :form nil))))
 
 (defn task-actions [{:keys [task-id status]}]
   [:div {:class "grid gap-3"}
    (when (= :active status)
      [:div {:class "grid gap-3"}
-      (complete-action {:on-click-attrs (ds/on-click-command :todo/complete-task
-                                                        {:extra {:task-id task-id}})})
-      (cancel-action {:on-click-attrs (ds/on-click-command :todo/cancel-task
-                                                      {:extra {:task-id task-id}})})])
+      (complete-action {:on-click-attrs (command-click :todo/complete-task
+                                                       [[:task-id (js-literal task-id)]])})
+      (cancel-action {:on-click-attrs (command-click :todo/cancel-task
+                                                     [[:task-id (js-literal task-id)]])})])
    (when (not= :active status)
      (chip-row
       (chip {:label (name status) :active? true :disabled? true})
       (when (= :completed status)
         (chip {:label "Archive task"
-               :on-click-attrs (ds/on-click-command :todo/archive-task
-                                               {:extra {:task-id task-id}})}))
+               :on-click-attrs (command-click :todo/archive-task
+                                              [[:task-id (js-literal task-id)]])}))
       (when (#{:completed :canceled} status)
         (chip {:label "Reactivate"
-               :on-click-attrs (ds/on-click-command :todo/reactivate-task
-                                               {:extra {:task-id task-id}})}))))])
+               :on-click-attrs (command-click :todo/reactivate-task
+                                              [[:task-id (js-literal task-id)]])}))))])
 
 (defn task-project-name
   [{:keys [project-id]} projects]
@@ -113,7 +119,7 @@
 (defn task-title-edit [{:keys [task-id title]}]
   (let [suffix (signal-suffix task-id)
         title-signal (str "title_" suffix)]
-    [:div {:data-signals (ds/signals {title-signal title})}
+    [:div {:data-signals (data-signals {title-signal title})}
      (text-field {:class "inline-edit-title"
                   :command "todo/rename-task"
                   :id-key :task-id
@@ -133,19 +139,21 @@
   (let [suffix (signal-suffix task-id)
         project-signal (str "project_" suffix)
         current-project-id (str (or project-id ""))
-        change-attrs (ds/on-command
-                      :change
-                      (cond-> {:when (ds/expr (ds/signal project-signal))
-                               :then {:command :todo/assign-task-to-project
-                                      :extra [[:task-id task-id]
-                                              [:project-id (ds/expr (ds/signal project-signal))]]}}
-                        project-id
-                        (assoc :else {:command :todo/remove-task-from-project
-                                      :extra [[:task-id task-id]]})))]
+        change-attrs {:data-on:change
+                      (str "if (" (signal-ref project-signal) ") { "
+                           (command-assignments :todo/assign-task-to-project
+                                                [[:task-id (js-literal task-id)]
+                                                 [:project-id (signal-ref project-signal)]])
+                           " @post($__grainAction); }"
+                           (when project-id
+                             (str " else { "
+                                  (command-assignments :todo/remove-task-from-project
+                                                       [[:task-id (js-literal task-id)]])
+                                  " @post($__grainAction); }")))}]
     (task-sidebar-section
      "Project"
      (when (= :active status)
-       [:div {:data-signals (ds/signals {project-signal current-project-id})}
+       [:div {:data-signals (data-signals {project-signal current-project-id})}
         (apply select-field
                {:signal-name project-signal
                 :aria-label "Project"
@@ -171,7 +179,7 @@
      "Due"
      (when (= :active status)
        [:div {:class "grid gap-3"
-              :data-signals (ds/signals {due-signal (or due-within-days "")})}
+              :data-signals (data-signals {due-signal (or due-within-days "")})}
         (due-within-field {:signal-name due-signal
                            :value due-within-days
                            :id-value task-id})])
@@ -207,14 +215,14 @@
 
 (defn task-primary-action [{:keys [task-id status]}]
   (case status
-    :active (check-action {:on-click-attrs (ds/on-click-command :todo/complete-task
-                                                           {:extra {:task-id task-id}})})
+    :active (check-action {:on-click-attrs (command-click :todo/complete-task
+                                                          [[:task-id (js-literal task-id)]])})
     :completed (chip {:label "archive"
-                      :on-click-attrs (ds/on-click-command :todo/archive-task
-                                                     {:extra {:task-id task-id}})})
+                      :on-click-attrs (command-click :todo/archive-task
+                                                     [[:task-id (js-literal task-id)]])})
     :canceled (chip {:label "active"
-                     :on-click-attrs (ds/on-click-command :todo/reactivate-task
-                                                    {:extra {:task-id task-id}})})
+                     :on-click-attrs (command-click :todo/reactivate-task
+                                                    [[:task-id (js-literal task-id)]])})
     nil))
 
 (defn task-summary-row
@@ -307,21 +315,21 @@
    (chip {:label (name status) :active? true :disabled? true})
    (when (= :active status)
      (chip {:label "completed"
-            :on-click-attrs (ds/on-click-command :todo/complete-project
-                                            {:extra {:project-id project-id}})}))
+            :on-click-attrs (command-click :todo/complete-project
+                                           [[:project-id (js-literal project-id)]])}))
    (when (= :active status)
      (chip {:label "canceled"
             :danger? true
-            :on-click-attrs (ds/on-click-command :todo/cancel-project
-                                            {:extra {:project-id project-id}})}))
+            :on-click-attrs (command-click :todo/cancel-project
+                                           [[:project-id (js-literal project-id)]])}))
    (when (#{:completed :canceled} status)
      (chip {:label "active"
-            :on-click-attrs (ds/on-click-command :todo/reactivate-project
-                                            {:extra {:project-id project-id}})}))))
+            :on-click-attrs (command-click :todo/reactivate-project
+                                           [[:project-id (js-literal project-id)]])}))))
 
 (defn project-editor [{:keys [project-id name]}]
   (let [name-signal (str "project_name_" (signal-suffix project-id))]
-    [:div {:data-signals (ds/signals {name-signal name})}
+    [:div {:data-signals (data-signals {name-signal name})}
      (text-field {:class "inline-edit-heading"
                   :command "todo/rename-project"
                   :id-key :project-id
@@ -409,9 +417,9 @@
      (chip {:label (if reviewed? "reviewed" "review")
             :active? reviewed?
             :disabled? reviewed?
-            :on-click-attrs (ds/on-click-command :todo/mark-task-reviewed
-                                            {:extra {:review-id (:review-id review)
-                                                     :task-id (:task-id task)}})})]))
+            :on-click-attrs (command-click :todo/mark-task-reviewed
+                                           [[:review-id (js-literal (:review-id review))]
+                                            [:task-id (js-literal (:task-id task))]])})]))
 
 (defn review-task-list [review reviewed-task-ids tasks projects]
   (if (seq tasks)
@@ -428,9 +436,9 @@
      (chip {:label (if reviewed? "reviewed" "review")
             :active? reviewed?
             :disabled? reviewed?
-            :on-click-attrs (ds/on-click-command :todo/mark-project-reviewed
-                                            {:extra {:review-id (:review-id review)
-                                                     :project-id (:project-id project)}})})]))
+            :on-click-attrs (command-click :todo/mark-project-reviewed
+                                           [[:review-id (js-literal (:review-id review))]
+                                            [:project-id (js-literal (:project-id project))]])})]))
 
 (defn review-project-list [review reviewed-project-ids projects]
   (if (seq projects)
@@ -596,9 +604,9 @@
        (empty-state "Empty state."))
        (fundamental-tray
         "Inputs"
-        [:div {:data-signals (ds/signals {title-signal "Inline title"
-                                          project-signal ""
-                                          due-signal "3"})}
+        [:div {:data-signals (data-signals {title-signal "Inline title"
+                                            project-signal ""
+                                            due-signal "3"})}
          (inert (text-field {:class ""
                              :command "todo/rename-task"
                              :id-key :task-id

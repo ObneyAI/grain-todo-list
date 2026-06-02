@@ -77,11 +77,11 @@ Application namespace pattern:
             [cjbarre.grain-todo-list.todo-list-service.todo-processors :as todo-processors]))
 ```
 
-Service namespaces require only the Grain interfaces they use. UI components that emit Datastar attributes should require the same v2 interface:
+Service namespaces require only the Grain interfaces they use. UI components that emit Datastar attributes should not require the Datastar v2 interface unless they need server-side helper functions. Use plain Hiccup attributes and app-local JSON/JavaScript literal helpers instead:
 
 ```clojure
 (ns cjbarre.grain-todo-list.ui.components
-  (:require [ai.obney.grain.datastar_v2.interface :as ds]))
+  (:require [clojure.data.json :as json]))
 ```
 
 ---
@@ -152,14 +152,14 @@ Example:
 
 ### App Components UI File
 
-Use `src/cjbarre/grain_todo_list/ui/components.clj` for reusable app-wide Hiccup primitives and Datastar v2 DSL helpers:
+Use `src/cjbarre/grain_todo_list/ui/components.clj` for reusable app-wide Hiccup primitives and small value-encoding helpers:
 
 - buttons, chips, fields, panels, lists, cards, and surfaces
-- shell-neutral form helpers
-- generic command buttons and inline edit controls
-- generic stream repost controls for search, filters, and pagination
+- shell-neutral field and action primitives
+- generic command assignment helpers when repeated JavaScript must be generated safely
+- JSON and JavaScript literal helpers for `data-signals` and command payloads
 
-Prefer adapter-owned DSL helpers over local string builders. New code should not create app-owned Datastar helpers that duplicate `ds/signal`, `ds/assign`, `ds/signals`, `ds/bind`, `ds/action-form`, `ds/on-click-command`, or `ds/on-command`.
+Datastar UI behavior is plain Hiccup attributes. Keep helpers shallow: they may encode values or assemble repeated assignments, but they should not hide the fact that the markup uses `data-bind`, `data-signals`, `data-on:*`, `@post($__grainStream)`, and `@post($__grainAction)`.
 
 ### Service Components UI File
 
@@ -305,7 +305,7 @@ Validation pattern:
 - return `:command-result/events` on success
 - return `:datastar/signals` for app-level feedback such as `:__toast`
 
-Do not return form field reset signals such as `:title ""` or `:projectName ""` from command handlers when the form is built with `ds/action-form`. Scoped form reset belongs to the adapter-owned form helper.
+Do not return form field reset signals such as `:title ""` or `:projectName ""` from command handlers. Field reset is browser UI behavior and belongs in the form's Datastar attributes when the UI needs it.
 
 Use event tags consistently:
 
@@ -459,189 +459,136 @@ Keep periodic tasks idempotent. If a task can run twice, use event-store CAS or 
 
 ---
 
-## Datastar V2 DSL Patterns
+## Datastar V2 Markup Patterns
 
-Use `ai.obney.grain.datastar_v2.interface` as the shallow, adapter-owned Datastar layer. Raw Datastar attributes still work as an escape hatch, but normal app code should prefer the DSL.
-
-### Literal Values And Raw Expressions
-
-Plain Clojure values are escaped as JavaScript literals:
-
-```clojure
-(ds/assign :task-id task-id)
-(ds/assign :due-within-days 3)
-```
-
-Use `ds/expr` only when the value is intentionally raw Datastar or JavaScript:
-
-```clojure
-(ds/assign :title (ds/expr "$evt.target.value"))
-(ds/assign :order (ds/expr "$order + 1"))
-```
-
-Use `ds/signal` when custom JavaScript must reference a signal:
-
-```clojure
-(str "if (" (ds/signal :title) ".trim()) { el.blur(); }")
-```
+Use `ai.obney.grain.datastar_v2.interface` for server integration: `ds/routes`, `ds/action-route`, custom stream/action interceptors, and SSE patch helpers. The adapter no longer provides UI DSL helpers. Application UI should author plain Datastar attributes in Hiccup.
 
 ### Signal Attributes
 
-Use `ds/signals` for explicit signal initialization:
+Initialize signals with JSON `data-signals`, bind inputs with `data-bind`, and display reactive values with Datastar attributes:
 
 ```clojure
-[:div (ds/signals {:title ""
-                   :due-within-days ""})]
+[:div {:data-signals (json/write-str {"title" ""
+                                      "due-within-days" ""})}
+ [:input {:class "input input-bordered"
+          :aria-label "Task title"
+          :required true
+          :data-bind "title"}]
+ [:div {:class "alert alert-error"
+        :data-show "$error"}
+  [:span {:data-text "$error"}]]]
 ```
 
-Use `ds/bind` for two-way input binding:
-
-```clojure
-[:input
- (merge {:class "input input-bordered"
-         :aria-label "Task title"
-         :required true}
-        (ds/bind :title))]
-```
-
-Use `ds/show` and `ds/text` for standard reactive display:
-
-```clojure
-[:div (merge {:class "alert alert-error"} (ds/show "$error"))
- [:span (ds/text "$error")]]
-```
+Keep browser signal names explicit. Namespaced command keys use slash strings in JSON and JavaScript, such as `"command/name"`.
 
 ### Reads
 
 Read interactions update browser signals and repost to the current stream. The v2 shim initializes `$__grainStream`, so view code should not hardcode a stream route.
 
-Use these helpers for search, filters, pagination, tabs, and other signal-carrying reads:
-
 ```clojure
-(ds/on-input-repost
-  {:debounce-ms 300
-   :assign {:search (ds/expr "$evt.target.value")}})
+[:input {:data-bind "search"
+         :data-on:input__debounce.300ms "@post($__grainStream)"}]
 
-(ds/on-change-repost
-  {:assign {:project-id (ds/expr "$evt.target.value")}})
+[:select {:data-bind "tab"
+          :data-on:change "@post($__grainStream)"}
+ [:option {:value "active"} "Active"]
+ [:option {:value "archived"} "Archived"]]
 
-(ds/on-click-repost
-  {:assign {:page (ds/expr "$page + 1")}})
+[:button {:data-on:click "$page = $page + 1; @post($__grainStream)"}
+ "Next"]
 ```
 
-These helpers emit `@post($__grainStream)` and preserve the current SSE stream reuse behavior.
+Prefer `@post($__grainStream)` for live filters, search, pagination, typeahead, and other signal-carrying reads. Avoid raw `@get` for signal-bearing interactions because Datastar serializes current signals into the URL.
 
 ### Command Buttons
 
-Use `ds/on-click-command` for button-like writes:
+Commands post to the shim-owned `$__grainAction` endpoint. Set `"command/name"` and command fields before posting:
 
 ```clojure
 (defn complete-action
   [{:keys [task-id]}]
-  [:button
-   (merge {:class "status-action"
-           :type "button"
-           :aria-label "Complete task"}
-          (ds/on-click-command :todo/complete-task
-            {:extra {:task-id task-id}}))
+  [:button {:class "status-action"
+            :type "button"
+            :aria-label "Complete task"
+            :data-on:click
+            (str "$['command/name'] = 'todo/complete-task'; "
+                 "$['task-id'] = '" task-id "'; "
+                 "@post($__grainAction)")}
    "Complete"])
 ```
 
-`on-click-command` sets `command/name`, applies `:extra` signal assignments, and posts to `$__grainAction`.
+Use JSON/JavaScript literal encoding helpers for dynamic strings, UUIDs, and namespaced keys. Do not interpolate unescaped user text into `data-on:*` JavaScript.
 
 ### Conditional Command Writes
 
-Use `ds/on-command` when a browser event needs to submit a command only under a condition, derive a value before submit, or choose between two commands. Do not build these flows by concatenating `ds/assign-all` with raw `@post($__grainAction)`.
-
-For inline text edits, keep the raw JavaScript to the minimum expression positions owned by the DSL:
+Inline edits and set/clear controls use plain Datastar JavaScript. Keep conditions compact and let command schemas validate the submitted payload.
 
 ```clojure
-(defn task-title-edit
-  [{:keys [task-id title title-signal]}]
-  [:input
-   (merge {:class "inline-edit-title"
-           :aria-label "Task title"
-           :type "text"}
-          (ds/bind title-signal)
-          (ds/on-command
-            :blur
-            {:let [['next (ds/expr (str (ds/signal title-signal) ".trim()"))]]
-             :when (ds/expr (str "next && next !== " (ds/lit title)))
-             :command :todo/rename-task
-             :extra {:task-id task-id
-                     :title (ds/expr "next")}}))])
+[:input {:class "inline-edit-title"
+         :aria-label "Task title"
+         :type "text"
+         :data-bind title-signal
+         :data-on:blur
+         (str "const next = $[" (json/write-str title-signal) "].trim(); "
+              "if (next && next !== " (json/write-str title) ") { "
+              "$['command/name'] = 'todo/rename-task'; "
+              "$['task-id'] = " (json/write-str (str task-id)) "; "
+              "$['title'] = next; "
+              "@post($__grainAction); }")}]
 ```
-
-For select controls that either set or clear a relationship, use the branch form:
 
 ```clojure
-(ds/on-command
-  :change
-  (cond-> {:when (ds/expr (ds/signal project-signal))
-           :then {:command :todo/assign-task-to-project
-                  :extra {:task-id task-id
-                          :project-id (ds/expr (ds/signal project-signal))}}}
-    project-id
-    (assoc :else {:command :todo/remove-task-from-project
-                  :extra {:task-id task-id}})))
+[:select {:data-bind project-signal
+          :data-on:change
+          (str "if ($[" (json/write-str project-signal) "]) { "
+               "$['command/name'] = 'todo/assign-task-to-project'; "
+               "$['task-id'] = " (json/write-str (str task-id)) "; "
+               "$['project-id'] = $[" (json/write-str project-signal) "]; "
+               "@post($__grainAction); } else { "
+               "$['command/name'] = 'todo/remove-task-from-project'; "
+               "$['task-id'] = " (json/write-str (str task-id)) "; "
+               "@post($__grainAction); }")}]
 ```
 
-For due-within inputs, coerce the signal to a number and branch between set and clear commands:
+For numeric fields, coerce in JavaScript before posting so Malli receives a JSON number:
 
 ```clojure
-(ds/on-command
-  :change
-  (cond-> {:let [['raw (ds/expr (ds/signal due-signal))]]
-           :when (ds/expr "raw !== '' && raw !== null")
-           :then {:command :todo/set-task-due-within
-                  :extra {:task-id task-id
-                          :due-within-days (ds/expr "Number(raw)")}}}
-    due-within-days
-    (assoc :else {:command :todo/clear-task-due-within
-                  :extra {:task-id task-id}})))
+[:input {:type "number"
+         :data-bind due-signal
+         :data-on:change
+         (str "const raw = $[" (json/write-str due-signal) "]; "
+              "if (raw !== '' && raw !== null) { "
+              "$['command/name'] = 'todo/set-task-due-within'; "
+              "$['task-id'] = " (json/write-str (str task-id)) "; "
+              "$['due-within-days'] = Number(raw); "
+              "@post($__grainAction); }")}]
 ```
-
-`on-command` posts through `$__grainAction`, sets `command/name`, and preserves event modifiers such as `:prevent?`, `:stop?`, and `:debounce-ms`. `:when` and `:let` values must be `ds/expr` because they are JavaScript contexts. `:extra` values are escaped as literals unless wrapped in `ds/expr`.
 
 ### Command Forms
 
-Use `ds/action-form` for command forms. The helper owns Datastar behavior; the caller owns visual markup. Todo-specific command forms belong in `todo_list_service/ui/components.clj`.
+Forms declare command signals and initial field signals on the form or an ancestor, bind inputs to those signals, and submit with `data-on:submit__prevent`.
 
 ```clojure
 (defn quick-add
   [{:keys [project-id]}]
-  (ds/action-form
-    {:command :todo/capture-task
-     :fields (cond-> {:title ""}
-               project-id (assoc :project-id project-id))}
-    [:input
-     (merge {:class "input input-bordered min-w-0 flex-1"
-             :aria-label "Task title"
-             :placeholder "Add a task"
-             :required true}
-            (ds/bind :title))]
-    [:button {:type "submit" :class "btn btn-primary"} "Add"]))
+  (let [title-signal (str "quick_add_" (or project-id "global") "_title")]
+    [:form {:data-signals (json/write-str {title-signal ""})
+            :data-on:submit__prevent
+            (str "$['command/name'] = 'todo/capture-task'; "
+                 "$['title'] = $[" (json/write-str title-signal) "]; "
+                 (when project-id
+                   (str "$['project-id'] = " (json/write-str (str project-id)) "; "))
+                 "@post($__grainAction); "
+                 "$[" (json/write-str title-signal) "] = '';")}
+     [:input {:class "input input-bordered min-w-0 flex-1"
+              :aria-label "Task title"
+              :placeholder "Add a task"
+              :required true
+              :data-bind title-signal}]
+     [:button {:type "submit" :class "btn btn-primary"} "Add"]]))
 ```
 
-`action-form` initializes signals, sets `command/name`, clears `error` and `fieldErrors`, and posts to `$__grainAction`.
-
-### Scoped Forms
-
-Use `ds/with-scope` when multiple forms on the same page share field names:
-
-```clojure
-(ds/with-scope (str "project-" project-id)
-  (ds/action-form
-    {:command :todo/rename-project
-     :fields {:project-id project-id
-              :name name}}
-    [:input
-     (merge {:class "inline-edit"
-             :aria-label "Project name"}
-            (ds/bind :name))]))
-```
-
-Inside the scope, `ds/bind` creates scoped browser signals. On submit, `action-form` copies scoped field values into unscoped command fields before posting, then restores previous unscoped values so sibling forms are not clobbered.
+Because command signals are ambient browser state, forms should set `"command/name"` on submit and use unique input signal names when several forms with the same field names can share a page. Command handlers should still validate duplicate or stale submissions defensively.
 
 ### Reserved Shim Signals
 
@@ -688,11 +635,10 @@ Prefer small component functions over a broad component library:
   [{:keys [label signal-name type required?]}]
   [:label {:class "form-control w-full"}
    [:div {:class "label"} [:span {:class "label-text"} label]]
-   [:input
-    (merge {:type (or type "text")
+   [:input {:type (or type "text")
             :required required?
-            :class "input input-bordered w-full"}
-           (ds/bind signal-name))]])
+            :class "input input-bordered w-full"
+            :data-bind signal-name}]])
 ```
 
 ### Error Display
@@ -701,8 +647,9 @@ Use the adapter-owned `error` signal for top-level command failures. The app-lev
 
 ```clojure
 (defn action-error []
-  [:div (merge {:class "alert alert-error mb-4"} (ds/show (ds/expr "$error")))
-   [:span (ds/text (ds/expr "$error"))]])
+  [:div {:class "alert alert-error mb-4"
+         :data-show "$error"}
+   [:span {:data-text "$error"}]])
 ```
 
 Field-level errors should read from `fieldErrors` when commands return field error maps.
@@ -718,11 +665,12 @@ Keep list rendering boring and durable. Todo-specific lists belong in the todo s
      [:li {:key task-id
            :class "flex items-center justify-between gap-4 p-3"}
       [:span {:class (when (= status :completed) "line-through opacity-60")} title]
-      [:button
-       (merge {:class "btn btn-ghost btn-sm"
-               :type "button"}
-              (ds/on-click-command :todo/complete-task
-                {:extra {:task-id task-id}}))
+      [:button {:class "btn btn-ghost btn-sm"
+                :type "button"
+                :data-on:click
+                (str "$['command/name'] = 'todo/complete-task'; "
+                     "$['task-id'] = '" task-id "'; "
+                     "@post($__grainAction)")}
        "Done"]])])
 ```
 
@@ -733,14 +681,13 @@ Keep list rendering boring and durable. Todo-specific lists belong in the todo s
 Do not use these patterns for new code:
 
 - hand-built command submissions that post directly to `/actions`
-- hand-built conditional command submissions that concatenate `if (...)`, `ds/assign-all`, and `@post($__grainAction)` instead of using `ds/on-command`
-- app-owned helpers such as `command-click`, `command-expr`, `ds-str`, `ds-assign`, or `signal-ref`
-- raw `data-signals` strings when `ds/signals` or `ds/action-form` can own signal initialization
-- old kebabless event attrs such as `:data-on-click` when the DSL can emit attrs
+- unescaped string interpolation of user text into `data-on:*` JavaScript
+- broad app-owned Datastar wrappers that hide plain `data-*` attributes
+- raw hand-written JSON strings for `data-signals` when `clojure.data.json/write-str` can encode them
+- old kebabless event attrs such as `:data-on-click`
 - `:datastar/fps` query metadata in Datastar v2 app guidance
-- raw signal reference strings when `ds/signal` can build the reference safely
 
-Only keep raw Datastar strings when the DSL does not yet cover a needed behavior. Conditional command submissions are covered by `ds/on-command`; raw JavaScript inside them should be limited to explicit `ds/expr` conditions and derived values.
+Plain Datastar attributes are expected. Keep local helpers limited to value/key encoding and repeated command assignment snippets.
 
 ---
 
@@ -757,7 +704,7 @@ For this project, add todo behavior inside the existing local service component.
 7. Add or update reusable app-wide UI primitives in `src/cjbarre/grain_todo_list/ui/components.clj`.
 8. Add or update todo-specific UI widgets in `todo_list_service/ui/components.clj`.
 9. Make the query call the service UI function.
-10. Use `ds/action-form`, `ds/on-click-command`, `ds/on-command`, or stream repost helpers for Datastar behavior.
+10. Use plain Datastar attributes for UI behavior: `data-bind`, `data-signals`, `data-on:*`, `@post($__grainAction)`, and `@post($__grainStream)`.
 11. Add route wiring in the root `::routes` only if the Grain route helpers do not already provide it.
 12. Run `npm run css:build` after adding new Tailwind classes.
 13. Start the app from the REPL with `(def app (app/start))`.
@@ -771,23 +718,23 @@ Only add another service directory if the app grows a second domain with its own
 Use this checklist when migrating this app from the deprecated adapter patterns to v2:
 
 1. Depend on `obneyai/grain-datastar-v2`.
-2. Change backend and UI component requires to `ai.obney.grain.datastar_v2.interface`.
+2. Keep backend route generation on `ai.obney.grain.datastar_v2.interface`.
 3. Use `ds/action-route` for the standard command endpoint.
-4. Replace manual command string helpers with `ds/on-click-command`, `ds/on-command`, and `ds/action-form`.
-5. Convert quick-add and project-add forms to `ds/action-form`.
-6. Convert status buttons, chips, review actions, and primary actions to `ds/on-click-command`.
-7. Convert inline rename, select assign/clear, and date set/clear flows to `ds/on-command`.
-8. Convert hand-built `data-signals` strings to `ds/signals` or `ds/action-form`.
-9. Use `ds/on-input-repost`, `ds/on-change-repost`, and `ds/on-click-repost` for signal-carrying read interactions.
+4. Remove UI component requires of `ai.obney.grain.datastar_v2.interface`; the latest adapter exports server helpers, not UI DSL helpers.
+5. Convert quick-add and project-add forms to `data-signals`, `data-bind`, and `data-on:submit__prevent`.
+6. Convert status buttons, chips, review actions, and primary actions to `data-on:click` command assignments plus `@post($__grainAction)`.
+7. Convert inline rename, select assign/clear, and date set/clear flows to plain `data-on:blur` or `data-on:change` JavaScript.
+8. Encode `data-signals` with `clojure.data.json/write-str`.
+9. Use `@post($__grainStream)` for signal-carrying read interactions.
 10. Remove `:datastar/fps` from query examples and app guidance.
 11. Run the test suite.
 12. Grep for old patterns:
 
 ```sh
-rg -n ":datastar/fps|@post\\('/actions'\\)|@post\\(\\$__grainAction\\)|data-on-submit__prevent|data-on-click|command-click|command-expr|ds-str|ds-assign|signal-ref" src doc
+rg -n ":datastar/fps|@post\\('/actions'\\)|data-on-submit__prevent|data-on-click|ds/(action-form|bind|signals|on-command|on-click-command|show|text|expr|lit|assign|with-scope)" src doc
 ```
 
-Any remaining matches should be either removed or clearly justified as an escape hatch. In normal UI component code, `@post($__grainAction)` should appear only in adapter output, tests that assert generated output, or rare JavaScript that the DSL does not yet cover.
+Any remaining matches should be either removed or clearly justified. Normal UI component code may contain `@post($__grainAction)` and `@post($__grainStream)` because those are the current plain Datastar integration points.
 
 ---
 
@@ -835,7 +782,7 @@ If a command appears to do nothing:
 
 If a signal-carrying read does not re-render:
 
-- confirm the control uses `ds/on-input-repost`, `ds/on-change-repost`, `ds/on-click-repost`, or `ds/repost-stream`
+- confirm the control posts to `$__grainStream`
 - confirm the query reads the submitted signal from request/query context
 - confirm the stream route is generated by `ds/routes`
 - confirm the shim-owned `$__grainStream` signal is present
