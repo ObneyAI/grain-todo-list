@@ -2,7 +2,7 @@
   (:require [ai.obney.grain.code-agent-tools.interface :as code-agent-tools]
             [ai.obney.grain.command-processor-v2.interface :as cp]
             [ai.obney.grain.command-request-handler-v2.interface :as crh]
-            [ai.obney.grain.datastar_v2.interface :as ds]
+            [ai.obney.grain.datastar.interface :as ds]
             [ai.obney.grain.event-store-v3.interface :as es]
             [ai.obney.grain.kv-store-lmdb.interface :as lmdb]
             [ai.obney.grain.kv-store.interface :as kv]
@@ -119,7 +119,7 @@
               {}
               {:datastar/shim-opts {:head datastar-head
                                      :html-attrs {:data-theme "workshop"}}})
-   #{(ds/action-route context {})
+   #{["/actions" :post [(ds/action-handler context {})] :route-name ::actions]
      ["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]
      ["/favicon.ico" :get [(fn [_] {:status 204 :body ""})] :route-name ::favicon]}))
 

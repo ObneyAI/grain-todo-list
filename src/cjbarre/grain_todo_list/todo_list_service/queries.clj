@@ -1,7 +1,12 @@
 (ns cjbarre.grain-todo-list.todo-list-service.queries
-  (:require [ai.obney.grain.query-processor.interface :refer [defquery]]
+  (:require [ai.obney.grain.datastar.ui :as ds-ui]
+            [ai.obney.grain.query-processor.interface :refer [defquery]]
             [cjbarre.grain-todo-list.todo-list-service.read-models :as rm]
             [cjbarre.grain-todo-list.todo-list-service.ui :as ui]))
+
+(defn render
+  [page]
+  (ds-ui/hiccup page))
 
 (defn workspace-data
   [ctx]
@@ -25,7 +30,7 @@
   [ctx]
   (let [data (workspace-data ctx)]
     {:query/result data
-     :datastar/hiccup (ui/home-page data)}))
+     :datastar/hiccup (render (ui/home-page data))}))
 
 (defquery :todo tasks-page
   {:authorized? (constantly true)
@@ -36,7 +41,7 @@
   (let [tasks (vec (rm/active-tasks ctx))
         projects (vec (rm/active-project-summaries ctx))]
     {:query/result {:tasks tasks :projects projects}
-     :datastar/hiccup (ui/tasks-page {:tasks tasks :projects projects})}))
+     :datastar/hiccup (render (ui/tasks-page {:tasks tasks :projects projects}))}))
 
 (defquery :todo task-page
   {:authorized? (constantly true)
@@ -47,7 +52,7 @@
   (let [task (get (rm/all-tasks ctx) task-id)
         projects (vec (rm/active-project-summaries ctx))]
     {:query/result {:task task :projects projects}
-     :datastar/hiccup (ui/task-page {:task task :projects projects})}))
+     :datastar/hiccup (render (ui/task-page {:task task :projects projects}))}))
 
 (defquery :todo projects-page
   {:authorized? (constantly true)
@@ -57,7 +62,7 @@
   [ctx]
   (let [projects (vec (rm/project-summaries ctx))]
     {:query/result {:projects projects}
-     :datastar/hiccup (ui/projects-page {:projects projects})}))
+     :datastar/hiccup (render (ui/projects-page {:projects projects}))}))
 
 (defquery :todo project-page
   {:authorized? (constantly true)
@@ -72,10 +77,10 @@
                                (assoc project :task-counts (rm/project-task-counts ctx project-id)))
                     :tasks tasks
                     :projects projects}
-     :datastar/hiccup (ui/project-page {:project (when project
-                                                   (assoc project :task-counts (rm/project-task-counts ctx project-id)))
-                                        :tasks tasks
-                                        :projects projects})}))
+     :datastar/hiccup (render (ui/project-page {:project (when project
+                                                           (assoc project :task-counts (rm/project-task-counts ctx project-id)))
+                                                :tasks tasks
+                                                :projects projects}))}))
 
 (defquery :todo review-page
   {:authorized? (constantly true)
@@ -85,7 +90,7 @@
   [ctx]
   (let [data (workspace-data ctx)]
     {:query/result data
-     :datastar/hiccup (ui/review-page data)}))
+     :datastar/hiccup (render (ui/review-page data))}))
 
 (defquery :todo dev-gallery-page
   {:authorized? (constantly true)
@@ -93,4 +98,4 @@
    :datastar/title "Dev UI Gallery"}
   [_ctx]
   {:query/result {}
-   :datastar/hiccup (ui/dev-gallery-page)})
+   :datastar/hiccup (render (ui/dev-gallery-page))})

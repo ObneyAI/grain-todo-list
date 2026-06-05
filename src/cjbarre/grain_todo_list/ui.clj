@@ -1,5 +1,6 @@
 (ns cjbarre.grain-todo-list.ui
-  (:require [cjbarre.grain-todo-list.ui.components :as c]))
+  (:require [ai.obney.grain.datastar.ui :as ds-ui]
+            [cjbarre.grain-todo-list.ui.components :as c]))
 
 (defn app-shell [{:keys [title]} & body]
   [:div#app
@@ -16,5 +17,5 @@
 
 (defn action-error []
   [:div {:class "alert alert-error mb-4"
-         :data-show "$error"}
-   [:span {:data-text "$error"}]])
+         :bind/show (ds-ui/js "$error")}
+   [:span {:bind/text (ds-ui/js "$error")}]])

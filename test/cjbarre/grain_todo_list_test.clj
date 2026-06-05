@@ -1,5 +1,6 @@
 (ns cjbarre.grain-todo-list-test
   (:require [ai.obney.grain.command-processor-v2.interface :as cp]
+            [ai.obney.grain.datastar.ui :as ds-ui]
             [ai.obney.grain.event-store-v3.interface :as es]
             [ai.obney.grain.kv-store.interface :as kv]
             [ai.obney.grain.kv-store-lmdb.interface :as lmdb]
@@ -40,6 +41,10 @@
   [attrs k]
   (or (contains? attrs k)
       (contains? attrs (attr-key k))))
+
+(defn render-ui
+  [hiccup]
+  (ds-ui/hiccup hiccup))
 
 (defn data-on-key?
   [k]
@@ -380,18 +385,19 @@
       (is (some #(= "Nothing to show." %) leaves))))
 
   (testing "todo service components render task and project summaries"
-    (let [hiccup [:div
-                  (tc/task-summary-row {:task-id task-id
-                                        :title "Summary task"
-                                        :status :active
-                                        :order 1000
-                                        :due-within-days 1
-                                        :due-within-set-at later}
-                                       [{:project-id project-id :name "Project"}])
-                  (tc/project-summary-row {:project-id project-id
-                                           :name "Summary project"
-                                           :status :active
-                                           :task-counts {:active 1 :completed 0}})]
+    (let [hiccup (render-ui
+                  [:div
+                   (tc/task-summary-row {:task-id task-id
+                                         :title "Summary task"
+                                         :status :active
+                                         :order 1000
+                                         :due-within-days 1
+                                         :due-within-set-at later}
+                                        [{:project-id project-id :name "Project"}])
+                   (tc/project-summary-row {:project-id project-id
+                                            :name "Summary project"
+                                            :status :active
+                                            :task-counts {:active 1 :completed 0}})])
           leaves (tree-seq coll? seq hiccup)
           attrs (filter map? leaves)]
       (is (some #(= "Summary task" %) leaves))
@@ -402,17 +408,18 @@
       (is (some #(= (str "/project?project-id=" project-id) (:href %)) attrs))))
 
   (testing "pure Hiccup rendering can be tested without Grain processors"
-    (let [hiccup (ui/home-page {:tasks [{:task-id task-id
-                                         :title "UI task"
-                                         :status :active
-                                         :order 1000}]
-                                :due-soon []
-                                :inactive [{:task-id task-2-id
-                                            :title "Closed task"
-                                            :status :completed
-                                            :order 2000}]
-                                :projects []
-                                :review {}})
+    (let [hiccup (render-ui
+                  (ui/home-page {:tasks [{:task-id task-id
+                                          :title "UI task"
+                                          :status :active
+                                          :order 1000}]
+                                 :due-soon []
+                                 :inactive [{:task-id task-2-id
+                                             :title "Closed task"
+                                             :status :completed
+                                             :order 2000}]
+                                 :projects []
+                                 :review {}}))
           leaves (tree-seq coll? seq hiccup)
           attrs (filter map? leaves)]
       (is (= :div#app (first hiccup)))
@@ -429,37 +436,38 @@
       (is (some #(= "/review" (:href %)) attrs))))
 
   (testing "review page exposes projection-derived progress without running processors"
-    (let [hiccup (ui/review-page {:tasks [{:task-id task-id
-                                           :title "Review task"
-                                           :status :active
-                                           :order 1000}]
-                                  :due-soon [{:task-id task-id
-                                              :title "Review due"
-                                              :status :active
-                                              :order 1000
-                                              :due-within-days 1
-                                              :due-within-set-at later}]
-                                  :inactive []
-                                  :projects [{:project-id project-id :name "UI project"}]
-                                  :review-projects [{:project-id project-id
-                                                     :name "UI project"
-                                                     :status :active
-                                                     :task-counts {:active 0 :completed 0}}]
-                                  :projects-without-next-action [{:project-id project-id
-                                                                  :name "UI project"
-                                                                  :status :active
-                                                                  :task-counts {:active 0 :completed 0}}]
-                                  :review {:review-id review-id
-                                           :status :active
-                                           :reviewed-task-ids #{task-id}
-                                           :reviewed-project-ids #{project-id}}})]
+    (let [hiccup (render-ui
+                  (ui/review-page {:tasks [{:task-id task-id
+                                            :title "Review task"
+                                            :status :active
+                                            :order 1000}]
+                                   :due-soon [{:task-id task-id
+                                               :title "Review due"
+                                               :status :active
+                                               :order 1000
+                                               :due-within-days 1
+                                               :due-within-set-at later}]
+                                   :inactive []
+                                   :projects [{:project-id project-id :name "UI project"}]
+                                   :review-projects [{:project-id project-id
+                                                      :name "UI project"
+                                                      :status :active
+                                                      :task-counts {:active 0 :completed 0}}]
+                                   :projects-without-next-action [{:project-id project-id
+                                                                   :name "UI project"
+                                                                   :status :active
+                                                                   :task-counts {:active 0 :completed 0}}]
+                                   :review {:review-id review-id
+                                            :status :active
+                                            :reviewed-task-ids #{task-id}
+                                            :reviewed-project-ids #{project-id}}}))]
       (is (some #(= "1/1 tasks reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "1/1 projects reviewed" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "Review due" %) (tree-seq coll? seq hiccup)))
       (is (some #(= "Projects Needing Tasks" %) (tree-seq coll? seq hiccup)))))
 
   (testing "dev gallery renders canonical fixtures without command post actions"
-    (let [hiccup (ui/dev-gallery-page)
+    (let [hiccup (render-ui (ui/dev-gallery-page))
           leaves (tree-seq coll? seq hiccup)
           attrs (filter map? leaves)]
       (is (= :div#app (first hiccup)))
@@ -488,7 +496,7 @@
       (is (some #(= "Task action states" %) leaves))
       (is (some #(= "Project action states" %) leaves))
       (is (not (some #(= "Edit project" %) leaves)))
-      (is (some #(contains? % :data-bind) attrs))
+      (is (not (some #(contains? % :data-bind) attrs)))
       (is (some #(= "No active projects." %) leaves))
       (is (some #(= "No active projects to review." %) leaves))
       (is (not (some #(= "data-uidotsh-pick" %) leaves)))
@@ -497,24 +505,24 @@
       (is (not (some #(and (string? %) (string/includes? % "@post('/actions')")) leaves)))))
 
   (testing "home command forms initialize plain Datastar command signals"
-    (let [hiccup (ui/home-page {:tasks []
-                                :due-soon []
-                                :inactive []
-                                :projects []
-                                :review nil})
+    (let [hiccup (render-ui
+                  (ui/home-page {:tasks []
+                                 :due-soon []
+                                 :inactive []
+                                 :projects []
+                                 :review nil}))
           leaves (tree-seq coll? seq hiccup)
           attrs (filter map? leaves)
           signal-strings (keep :data-signals attrs)
           submit-strings (keep #(attr-value % :data-on:submit__prevent) attrs)]
-      (is (some #(string/includes? % "\"quick_add_global_title\":\"\"") signal-strings))
-      (is (some #(string/includes? % "\"project_add_name\":\"\"") signal-strings))
-      (is (every? #(string/includes? % "@post($__grainAction)") submit-strings))
+      (is (some #(string/includes? % "\"title__") signal-strings))
+      (is (some #(string/includes? % "project-add-name") signal-strings))
+      (is (every? #(string/includes? % "@post($__grainAction") submit-strings))
       (is (some #(string/includes? % "todo/capture-task") submit-strings))
       (is (some #(string/includes? % "todo/create-project") submit-strings))
-      (is (some #(string/includes? % "$[\"title\"] = $[\"quick_add_global_title\"]") submit-strings))
-      (is (some #(string/includes? % "$[\"name\"] = $[\"project_add_name\"]") submit-strings))
-      (is (some #(string/includes? % "$[\"quick_add_global_title\"] = ''") submit-strings))
-      (is (some #(string/includes? % "$[\"project_add_name\"] = ''") submit-strings))))
+      (is (some #(string/includes? % "\"title\":") submit-strings))
+      (is (some #(string/includes? % "\"name\":") submit-strings))
+      (is (some #(string/includes? % " = \"\"") submit-strings))))
 
   (testing "cards stay minimal and task page owns the edit UI"
     (let [task {:task-id task-id
@@ -524,9 +532,11 @@
                 :project-id project-id
                 :due-within-days 1
                 :due-within-set-at later}
-          card-leaves (tree-seq coll? seq (tc/task-card task []))
+          card-hiccup (render-ui (tc/task-card task []))
+          page-hiccup (render-ui (ui/task-page {:task task :projects []}))
+          card-leaves (tree-seq coll? seq card-hiccup)
           card-attrs (filter map? card-leaves)
-          page-leaves (tree-seq coll? seq (ui/task-page {:task task :projects []}))
+          page-leaves (tree-seq coll? seq page-hiccup)
           page-attrs (filter map? page-leaves)
           page-attr-values (filter string? (mapcat vals page-attrs))]
       (is (some #(= "Minimal card" %) card-leaves))
@@ -560,8 +570,8 @@
             command-name))
       (is (not (some #(= "Edit details" %) page-leaves))))))
 
-(deftest datastar-v2-migration-tests
-  (testing "app source uses plain Datastar attributes instead of removed adapter UI DSL"
+(deftest datastar-dsl-migration-tests
+  (testing "app source uses the checked Datastar DSL instead of removed v2/manual patterns"
     (let [source (str (slurp "src/cjbarre/grain_todo_list.clj")
                       "\n"
                       (slurp "src/cjbarre/grain_todo_list/ui.clj")
@@ -590,6 +600,14 @@
                                "ds/lit"
                                "ds/assign"
                                "ds/with-scope"
+                               "grain-datastar-v2"
+                               "datastar_v2"
+                               "ds/action-route"
+                               "command-click"
+                               "command-assignments"
+                               "with-signal-scope"
+                               "data-signals"
+                               "signal-ref"
                                "@post('/actions')"
                                "data-on-submit__prevent"
                                "data-on-click"]]

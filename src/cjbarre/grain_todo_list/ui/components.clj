@@ -1,70 +1,4 @@
-(ns cjbarre.grain-todo-list.ui.components
-  (:require [clojure.data.json :as json]
-            [clojure.string :as string]))
-
-(defn signal-suffix
-  [value]
-  (string/replace (str value) #"[^a-zA-Z0-9_]" "_"))
-
-(defn js-literal
-  [value]
-  (string/replace
-   (json/write-str (cond
-                     (keyword? value) (subs (str value) 1)
-                     (uuid? value) (str value)
-                     :else value))
-   "\\/"
-   "/"))
-
-(defn signal-key
-  [k]
-  (cond
-    (keyword? k) (if-let [ns (namespace k)]
-                   (str ns "/" (name k))
-                   (name k))
-    :else (str k)))
-
-(defn signal-ref
-  [signal-name]
-  (str "$[" (js-literal (signal-key signal-name)) "]"))
-
-(defn data-signals
-  [signals]
-  (string/replace
-   (json/write-str
-    (into {}
-          (map (fn [[k v]]
-                 [(signal-key k) (cond
-                                   (keyword? v) (subs (str v) 1)
-                                   (uuid? v) (str v)
-                                   :else v)]))
-          signals))
-   "\\/"
-   "/"))
-
-(defn reset-signal-expr
-  [signal-name value]
-  (str (signal-ref signal-name) " = " (js-literal value) "; el.blur();"))
-
-(defn command-name
-  [command]
-  (if (keyword? command)
-    (subs (str command) 1)
-    (str command)))
-
-(defn command-assignments
-  [command fields]
-  (str "$['command/name'] = " (js-literal (command-name command)) "; "
-       (string/join
-        " "
-        (map (fn [[k v]]
-               (str "$[" (js-literal (signal-key k)) "] = " v ";"))
-             fields))))
-
-(defn command-click
-  [command fields]
-  {:data-on:click (str (command-assignments command fields)
-                       " @post($__grainAction)")})
+(ns cjbarre.grain-todo-list.ui.components)
 
 (defn surface-class
   [variant class]
@@ -117,31 +51,22 @@
     action]])
 
 (defn action-button
-  [{:keys [label class type disabled? on-click-attrs]}]
+  [{:keys [label class type disabled? on-click-attrs attrs]}]
   [:button (cond-> {:class (str "btn " class)
                     :type (or type "button")
                     :disabled disabled?}
+             attrs (merge attrs)
              on-click-attrs (merge on-click-attrs))
    label])
 
 (defn text-field
-  [{:keys [class command id-key id-value value-key signal-name value aria-label multiline?]}]
+  [{:keys [class aria-label multiline? attrs]}]
   (let [tag (if multiline? :textarea :input)
-        attrs {:class (str "inline-edit " class)
-               :aria-label aria-label
-               :required true}
-        datastar-attrs {:data-bind signal-name
-                        :data-on:blur (str "const next = " (signal-ref signal-name) ".trim(); "
-                                           "if (next && next !== " (js-literal value) ") { "
-                                           (command-assignments command
-                                                                [[id-key (js-literal id-value)]
-                                                                 [value-key "next"]])
-                                           " @post($__grainAction); }")
-                        :data-on:keydown (str "if (evt.key === 'Enter') { evt.preventDefault(); el.blur(); } "
-                                              "if (evt.key === 'Escape') { evt.preventDefault(); "
-                                              (reset-signal-expr signal-name value) " }")}]
-    [tag (merge (if multiline? attrs (assoc attrs :type "text"))
-                datastar-attrs)]))
+        base-attrs {:class (str "inline-edit " class)
+                    :aria-label aria-label
+                    :required true}]
+    [tag (merge (if multiline? base-attrs (assoc base-attrs :type "text"))
+                attrs)]))
 
 (defn chip
   [{:keys [label active? disabled? danger? href on-click-attrs]}]
@@ -177,11 +102,11 @@
     [:span {:class (str "status-token " (or class ""))} label]))
 
 (defn select-field
-  [{:keys [class signal-name aria-label disabled? on-change-attrs]} & options]
+  [{:keys [class aria-label disabled? on-change-attrs attrs]} & options]
   (into [:select (merge {:class (str "inline-select " class)
                          :aria-label aria-label
                          :disabled disabled?}
-                        {:data-bind signal-name}
+                        attrs
                         on-change-attrs)]
         options))
 

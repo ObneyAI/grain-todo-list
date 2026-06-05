@@ -1,5 +1,6 @@
 (ns cjbarre.grain-todo-list.todo-list-service.ui
-  (:require [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
+  (:require [ai.obney.grain.datastar.ui :as ds-ui]
+            [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
             [cjbarre.grain-todo-list.ui :as app-ui]
             [cjbarre.grain-todo-list.ui.components :as c]))
 
@@ -24,7 +25,7 @@
                     (tc/project-add)
                     (tc/projects-list projects))
            [:a {:class "block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                :href "/review"
+                :href (ds-ui/href :todo/review-page)
                 :aria-label "Weekly review"}
             (c/panel {:title "Weekly Review"
                       :status (if (= :active (:status review))
@@ -111,12 +112,18 @@
                (c/action-button {:label "Complete review"
                                  :class "btn-primary"
                                  :disabled? (not review-complete?)
-                                 :on-click-attrs (c/command-click
-                                                  :todo/complete-weekly-review
-                                                  [[:review-id (c/js-literal (:review-id review))]])})])
+                                 :on-click-attrs {:on/click
+                                                  {:effect
+                                                   (ds-ui/dispatch
+                                                    :todo/complete-weekly-review
+                                                    {:review-id (:review-id review)})}}})])
             (c/action-button {:label "Start weekly review"
                               :class "btn-primary"
-                              :on-click-attrs (c/command-click :todo/start-weekly-review [])}))]))
+                              :on-click-attrs {:on/click
+                                               {:effect
+                                                (ds-ui/dispatch
+                                                 :todo/start-weekly-review
+                                                 {})}}}))]))
 
 (defn dev-gallery-page []
   (tc/dev-gallery-page))

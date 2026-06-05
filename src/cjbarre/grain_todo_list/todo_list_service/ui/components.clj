@@ -1,11 +1,22 @@
 (ns cjbarre.grain-todo-list.todo-list-service.ui.components
-  (:require [cjbarre.grain-todo-list.ui.components
-             :refer [action-button badge badge-row chip chip-row command-assignments command-click data-signals empty-state form-class js-literal metadata-text page-section page-title panel product-label section-title select-field signal-ref signal-suffix status-action surface surface-class text-field]]
+  (:require [ai.obney.grain.datastar.ui :as ds-ui]
+            [cjbarre.grain-todo-list.ui.components
+             :refer [action-button badge badge-row chip chip-row empty-state form-class metadata-text page-section page-title panel product-label section-title select-field status-action surface surface-class text-field]]
             [clojure.string :as string]))
 
 (defn date-value
   [value]
   (some-> value str (subs 0 10)))
+
+(defn dom-id-suffix
+  [value]
+  (string/replace (str value) #"[^a-zA-Z0-9_]" "_"))
+
+(defn static-specimen
+  [node]
+  (ds-ui/static (ds-ui/ir node) {:strip-href? true
+                                 :strip-raw-events? true}))
+
 (defn check-action
   [{:keys [aria-label on-click-attrs]}]
   [:button (cond-> {:class "check-action"
@@ -27,19 +38,16 @@
                   :danger? true
                   :on-click-attrs on-click-attrs}))
 (defn due-within-field
-  [{:keys [signal-name value id-value]}]
-  (let [input-id (str signal-name "-input")
-        change-js (str "const raw = " (signal-ref signal-name) "; "
-                       "if (raw !== '' && raw !== null) { "
-                       (command-assignments :todo/set-task-due-within
-                                            [[:task-id (js-literal id-value)]
-                                             [:due-within-days "Number(raw)"]])
-                       " @post($__grainAction); }"
-                       (when value
-                         (str " else { "
-                              (command-assignments :todo/clear-task-due-within
-                                                   [[:task-id (js-literal id-value)]])
-                              " @post($__grainAction); }")))]
+  [{:keys [signal value id-value input-id]}]
+  (let [change-effect (ds-ui/choose-effect
+                       (ds-ui/present? signal)
+                       (ds-ui/dispatch :todo/set-task-due-within
+                                       {:task-id id-value
+                                        :due-within-days (ds-ui/num signal)})
+                       (if value
+                         (ds-ui/dispatch :todo/clear-task-due-within
+                                         {:task-id id-value})
+                         (ds-ui/action "")))]
     [:div {:class "due-within-control"}
      [:label {:class "due-within-label" :for input-id} "Due within"]
      [:div {:class "due-within-input-wrap"}
@@ -52,82 +60,90 @@
                       :step "1"
                       :inputmode "numeric"
                       :placeholder "0"}
-                     {:data-bind signal-name
-                      :data-on:change change-js})]
+                     {:bind/value signal
+                      :on/change {:effect change-effect}})]
       [:span {:class "due-within-unit"} "days"]]]))
 
 (defn quick-add [{:keys [project-id]}]
-  (let [title-signal (str "quick_add_" (signal-suffix (or project-id "global")) "_title")
-        submit-js (str (command-assignments :todo/capture-task
-                                            (cond-> [[:title (signal-ref title-signal)]]
-                                              project-id
-                                              (conj [:project-id (js-literal project-id)])))
-                       " @post($__grainAction); "
-                       (signal-ref title-signal) " = '';")]
-    (form-class
-     [:form {:data-signals (data-signals {title-signal ""})
-             :data-on:submit__prevent submit-js}
+  (form-class
+   (ds-ui/with-signals [title {:init ""}]
+     [:form {:on/submit {:effect
+                         (ds-ui/effects
+                          (ds-ui/dispatch :todo/capture-task
+                                          (cond-> {:title (ds-ui/trimmed title)}
+                                            project-id (assoc :project-id project-id)))
+                          (ds-ui/reset-signal title))
+                         :modifiers {:prevent true}}}
       [:input {:class "input input-bordered min-w-0 flex-1"
                :aria-label "Task title"
                :placeholder "Add a task"
                :required true
-               :data-bind title-signal}]
-      (action-button {:label "Add" :class "btn-primary" :type "submit"})]
-     (surface-class :form nil))))
+               :bind/value title}]
+      (action-button {:label "Add" :class "btn-primary" :type "submit"})])
+   (surface-class :form nil)))
 
 (defn project-add []
-  (let [name-signal "project_add_name"
-        submit-js (str (command-assignments :todo/create-project
-                                            [[:name (signal-ref name-signal)]])
-                       " @post($__grainAction); "
-                       (signal-ref name-signal) " = '';")]
-    (form-class
-     [:form {:data-signals (data-signals {name-signal ""})
-             :data-on:submit__prevent submit-js}
+  (form-class
+   (ds-ui/with-signals [project-name {:name "project-add-name" :init ""}]
+     [:form {:on/submit {:effect
+                         (ds-ui/effects
+                          (ds-ui/dispatch :todo/create-project
+                                          {:name (ds-ui/trimmed project-name)})
+                          (ds-ui/reset-signal project-name))
+                         :modifiers {:prevent true}}}
       [:input {:class "input input-bordered min-w-0 flex-1"
                :aria-label "Project name"
                :placeholder "New project"
                :required true
-               :data-bind name-signal}]
-      (action-button {:label "Create project" :class "btn-outline" :type "submit"})]
-     (surface-class :form nil))))
+               :bind/value project-name}]
+      (action-button {:label "Create project" :class "btn-outline" :type "submit"})])
+   (surface-class :form nil)))
 
 (defn task-actions [{:keys [task-id status]}]
   [:div {:class "grid gap-3"}
    (when (= :active status)
      [:div {:class "grid gap-3"}
-      (complete-action {:on-click-attrs (command-click :todo/complete-task
-                                                       [[:task-id (js-literal task-id)]])})
-      (cancel-action {:on-click-attrs (command-click :todo/cancel-task
-                                                     [[:task-id (js-literal task-id)]])})])
+      (complete-action {:on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/complete-task
+                                                                            {:task-id task-id})}}})
+      (cancel-action {:on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/cancel-task
+                                                                          {:task-id task-id})}}})])
    (when (not= :active status)
      (chip-row
       (chip {:label (name status) :active? true :disabled? true})
       (when (= :completed status)
         (chip {:label "Archive task"
-               :on-click-attrs (command-click :todo/archive-task
-                                              [[:task-id (js-literal task-id)]])}))
+               :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/archive-task
+                                                                    {:task-id task-id})}}}))
       (when (#{:completed :canceled} status)
         (chip {:label "Reactivate"
-               :on-click-attrs (command-click :todo/reactivate-task
-                                              [[:task-id (js-literal task-id)]])}))))])
+               :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/reactivate-task
+                                                                    {:task-id task-id})}}}))))])
 
 (defn task-project-name
   [{:keys [project-id]} projects]
   (some #(when (= project-id (:project-id %)) (:name %)) projects))
 
 (defn task-title-edit [{:keys [task-id title]}]
-  (let [suffix (signal-suffix task-id)
-        title-signal (str "title_" suffix)]
-    [:div {:data-signals (data-signals {title-signal title})}
+  (ds-ui/with-signals [title-draft {:init title}]
+    [:div
      (text-field {:class "inline-edit-title"
-                  :command "todo/rename-task"
-                  :id-key :task-id
-                  :id-value task-id
-                  :value-key :title
-                  :signal-name title-signal
-                  :value title
-                  :aria-label "Task title"})]))
+                  :aria-label "Task title"
+                  :attrs {:bind/value title-draft
+                          :on/blur {:effect
+                                    (ds-ui/choose-effect
+                                     (ds-ui/present? (ds-ui/trimmed title-draft))
+                                     (ds-ui/when-effect
+                                      (ds-ui/changed? (ds-ui/trimmed title-draft) title)
+                                      (ds-ui/dispatch :todo/rename-task
+                                                      {:task-id task-id
+                                                       :title (ds-ui/trimmed title-draft)}))
+                                     (ds-ui/set-signal title-draft title))}
+                          :on/keydown {:effect
+                                       (ds-ui/on-keys
+                                        {"Enter" (ds-ui/blur)
+                                         "Escape" (ds-ui/effects
+                                                   (ds-ui/set-signal title-draft title)
+                                                   (ds-ui/blur))})}}})]))
 
 (defn task-sidebar-section
   [title & body]
@@ -136,32 +152,33 @@
    body])
 
 (defn task-project-panel [{:keys [task-id project-id status] :as task} projects]
-  (let [suffix (signal-suffix task-id)
-        project-signal (str "project_" suffix)
+  (let [suffix (dom-id-suffix task-id)
+        input-id (str "project-" suffix)
         current-project-id (str (or project-id ""))
-        change-attrs {:data-on:change
-                      (str "if (" (signal-ref project-signal) ") { "
-                           (command-assignments :todo/assign-task-to-project
-                                                [[:task-id (js-literal task-id)]
-                                                 [:project-id (signal-ref project-signal)]])
-                           " @post($__grainAction); }"
-                           (when project-id
-                             (str " else { "
-                                  (command-assignments :todo/remove-task-from-project
-                                                       [[:task-id (js-literal task-id)]])
-                                  " @post($__grainAction); }")))}]
+        change-effect (fn [project-draft]
+                        (ds-ui/choose-effect
+                         (ds-ui/present? project-draft)
+                         (ds-ui/dispatch :todo/assign-task-to-project
+                                         {:task-id task-id
+                                          :project-id project-draft})
+                         (if project-id
+                           (ds-ui/dispatch :todo/remove-task-from-project
+                                           {:task-id task-id})
+                           (ds-ui/action ""))))]
     (task-sidebar-section
      "Project"
      (when (= :active status)
-       [:div {:data-signals (data-signals {project-signal current-project-id})}
-        (apply select-field
-               {:signal-name project-signal
-                :aria-label "Project"
-                :disabled? (empty? projects)
-                :on-change-attrs change-attrs}
-               (concat [[:option {:value ""} "No project"]]
-                       (for [{:keys [project-id name]} projects]
-                         [:option {:key project-id :value project-id} name])))])
+       (ds-ui/with-signals [project-draft {:init current-project-id}]
+         [:div
+          (apply select-field
+                 {:aria-label "Project"
+                  :disabled? (empty? projects)
+                  :attrs {:id input-id
+                          :bind/value project-draft}
+                  :on-change-attrs {:on/change {:effect (change-effect project-draft)}}}
+                 (concat [[:option {:value ""} "No project"]]
+                         (for [{:keys [project-id name]} projects]
+                           [:option {:key project-id :value (str project-id)} name])))]))
      (when (not= :active status)
        [:p {:class "text-sm text-base-content/70"} (or (task-project-name task projects) "No project")]))))
 
@@ -173,16 +190,17 @@
       (str "Due within " due-within-days " day" (when (not= 1 due-within-days) "s")))))
 
 (defn task-schedule-panel [{:keys [task-id due-within-days due-within-set-at status] :as task}]
-  (let [suffix (signal-suffix task-id)
-        due-signal (str "due_within_" suffix)]
+  (let [suffix (dom-id-suffix task-id)
+        input-id (str "due-within-" suffix)]
     (task-sidebar-section
      "Due"
      (when (= :active status)
-       [:div {:class "grid gap-3"
-              :data-signals (data-signals {due-signal (or due-within-days "")})}
-        (due-within-field {:signal-name due-signal
-                           :value due-within-days
-                           :id-value task-id})])
+       (ds-ui/with-signals [due-draft {:init (or due-within-days "")}]
+         [:div {:class "grid gap-3"}
+          (due-within-field {:signal due-draft
+                             :input-id input-id
+                             :value due-within-days
+                             :id-value task-id})]))
      (when (not= :active status)
        [:div {:class "grid gap-3 text-sm"}
         [:div
@@ -207,22 +225,22 @@
 
 (defn task-href
   [{:keys [task-id]}]
-  (str "/task?task-id=" task-id))
+  (ds-ui/href :todo/task-page {:query-params {:task-id task-id}}))
 
 (defn project-href
   [{:keys [project-id]}]
-  (str "/project?project-id=" project-id))
+  (ds-ui/href :todo/project-page {:query-params {:project-id project-id}}))
 
 (defn task-primary-action [{:keys [task-id status]}]
   (case status
-    :active (check-action {:on-click-attrs (command-click :todo/complete-task
-                                                          [[:task-id (js-literal task-id)]])})
+    :active (check-action {:on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/complete-task
+                                                                               {:task-id task-id})}}})
     :completed (chip {:label "archive"
-                      :on-click-attrs (command-click :todo/archive-task
-                                                     [[:task-id (js-literal task-id)]])})
+                      :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/archive-task
+                                                                           {:task-id task-id})}}})
     :canceled (chip {:label "active"
-                     :on-click-attrs (command-click :todo/reactivate-task
-                                                    [[:task-id (js-literal task-id)]])})
+                     :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/reactivate-task
+                                                                          {:task-id task-id})}}})
     nil))
 
 (defn task-summary-row
@@ -315,29 +333,39 @@
    (chip {:label (name status) :active? true :disabled? true})
    (when (= :active status)
      (chip {:label "completed"
-            :on-click-attrs (command-click :todo/complete-project
-                                           [[:project-id (js-literal project-id)]])}))
+            :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/complete-project
+                                                                 {:project-id project-id})}}}))
    (when (= :active status)
      (chip {:label "canceled"
             :danger? true
-            :on-click-attrs (command-click :todo/cancel-project
-                                           [[:project-id (js-literal project-id)]])}))
+            :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/cancel-project
+                                                                 {:project-id project-id})}}}))
    (when (#{:completed :canceled} status)
      (chip {:label "active"
-            :on-click-attrs (command-click :todo/reactivate-project
-                                           [[:project-id (js-literal project-id)]])}))))
+            :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/reactivate-project
+                                                                 {:project-id project-id})}}}))))
 
 (defn project-editor [{:keys [project-id name]}]
-  (let [name-signal (str "project_name_" (signal-suffix project-id))]
-    [:div {:data-signals (data-signals {name-signal name})}
+  (ds-ui/with-signals [name-draft {:init name}]
+    [:div
      (text-field {:class "inline-edit-heading"
-                  :command "todo/rename-project"
-                  :id-key :project-id
-                  :id-value project-id
-                  :value-key :name
-                  :signal-name name-signal
-                  :value name
-                  :aria-label "Project name"})]))
+                  :aria-label "Project name"
+                  :attrs {:bind/value name-draft
+                          :on/blur {:effect
+                                    (ds-ui/choose-effect
+                                     (ds-ui/present? (ds-ui/trimmed name-draft))
+                                     (ds-ui/when-effect
+                                      (ds-ui/changed? (ds-ui/trimmed name-draft) name)
+                                      (ds-ui/dispatch :todo/rename-project
+                                                      {:project-id project-id
+                                                       :name (ds-ui/trimmed name-draft)}))
+                                     (ds-ui/set-signal name-draft name))}
+                          :on/keydown {:effect
+                                       (ds-ui/on-keys
+                                        {"Enter" (ds-ui/blur)
+                                         "Escape" (ds-ui/effects
+                                                   (ds-ui/set-signal name-draft name)
+                                                   (ds-ui/blur))})}}})]))
 
 (defn task-count-row [task-counts]
   (let [{:keys [active completed canceled archived]} (merge {:active 0 :completed 0 :canceled 0 :archived 0}
@@ -417,9 +445,9 @@
      (chip {:label (if reviewed? "reviewed" "review")
             :active? reviewed?
             :disabled? reviewed?
-            :on-click-attrs (command-click :todo/mark-task-reviewed
-                                           [[:review-id (js-literal (:review-id review))]
-                                            [:task-id (js-literal (:task-id task))]])})]))
+            :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/mark-task-reviewed
+                                                                 {:review-id (:review-id review)
+                                                                  :task-id (:task-id task)})}}})]))
 
 (defn review-task-list [review reviewed-task-ids tasks projects]
   (if (seq tasks)
@@ -436,9 +464,9 @@
      (chip {:label (if reviewed? "reviewed" "review")
             :active? reviewed?
             :disabled? reviewed?
-            :on-click-attrs (command-click :todo/mark-project-reviewed
-                                           [[:review-id (js-literal (:review-id review))]
-                                            [:project-id (js-literal (:project-id project))]])})]))
+            :on-click-attrs {:on/click {:effect (ds-ui/dispatch :todo/mark-project-reviewed
+                                                                 {:review-id (:review-id review)
+                                                                  :project-id (:project-id project)})}}})]))
 
 (defn review-project-list [review reviewed-project-ids projects]
   (if (seq projects)
@@ -500,42 +528,9 @@
    :status :archived
    :order 5000})
 
-(defn data-on-key?
-  [k]
-  (cond
-    (keyword? k)
-    (or (= "data-on" (namespace k))
-        (string/starts-with? (name k) "data-on"))
-
-    (string? k)
-    (string/starts-with? k "data-on")
-
-    :else false))
-
-(defn inert-attrs
-  [attrs]
-  (into {}
-        (remove (fn [[k _]]
-                  (or (data-on-key? k)
-                      (= :href k)
-                      (= :data-signals k)
-                      (= "data-signals" k))))
-        attrs))
-
 (defn inert
   [node]
-  (cond
-    (vector? node)
-    (let [[tag maybe-attrs & children] node
-          attrs? (map? maybe-attrs)
-          attrs (if attrs? maybe-attrs {})
-          children (if attrs? children (cons maybe-attrs children))]
-      (into [tag (inert-attrs attrs)]
-            (map inert)
-            children))
-
-    (seq? node) (doall (map inert node))
-    :else node))
+  (static-specimen node))
 
 (defn gallery-section
   [{:keys [title status]} & body]
@@ -561,10 +556,7 @@
 
 (defn design-system-fundamentals []
   (let [[active-task] gallery-tasks
-        [active-project] gallery-projects
-        title-signal "fundamental_title"
-        project-signal "fundamental_project"
-        due-signal "fundamental_due_within"]
+        [active-project] gallery-projects]
     (surface
      {:tag :section :variant :gallery :class "gallery-vista"}
      (surface
@@ -604,24 +596,17 @@
        (empty-state "Empty state."))
        (fundamental-tray
         "Inputs"
-        [:div {:data-signals (data-signals {title-signal "Inline title"
-                                            project-signal ""
-                                            due-signal "3"})}
-         (inert (text-field {:class ""
-                             :command "todo/rename-task"
-                             :id-key :task-id
-                             :id-value gallery-task-id
-                             :value-key :title
-                             :signal-name title-signal
-                             :value "Inline title"
-                             :aria-label "Inline title"}))]
-        (inert (select-field {:signal-name project-signal
-                              :aria-label "Project"}
+        (inert (task-title-edit (assoc active-task :title "Inline title")))
+        (inert (select-field {:aria-label "Project"}
                              [:option {:value ""} "No project"]
-                             [:option {:value gallery-project-id} "Launch reference checklist"]))
-        (inert (due-within-field {:signal-name due-signal
-                                  :value 3
-                                  :id-value gallery-task-id})))
+                             [:option {:value (str gallery-project-id)} "Launch reference checklist"]))
+        (inert
+         (ds-ui/with-signals [due-draft {:name "fundamental-due-within" :init "3"}]
+           [:div
+            (due-within-field {:signal due-draft
+                               :input-id "fundamental-due-within"
+                               :value 3
+                               :id-value gallery-task-id})])))
        (fundamental-tray
         "Actions"
         [:div {:class "flex flex-wrap gap-2"}
