@@ -6,6 +6,7 @@
             [ai.obney.grain.kv-store-lmdb.interface :as lmdb]
             [ai.obney.grain.query-processor.interface :as qp]
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
+            [cjbarre.auth-interceptors :as auth]
             [cjbarre.grain-todo-list :as app]
             [cjbarre.grain-todo-list.todo-list-service.read-models :as todo-read-models]
             [cjbarre.grain-todo-list.todo-list-service.ui :as ui]
@@ -127,6 +128,7 @@
   (testing "root app namespace owns composition and lifecycle entrypoints"
     (is (map? app/system))
     (is (contains? app/system :cjbarre.grain-todo-list/routes))
+    (is (contains? app/system :cjbarre.grain-todo-list/auth-token-verifier))
     (is (fn? app/start))
     (is (fn? app/stop))))
 
@@ -569,6 +571,42 @@
         (is (some #(string/includes? % command-name) page-attr-values)
             command-name))
       (is (not (some #(= "Edit details" %) page-leaves))))))
+
+(deftest auth-interceptor-tests
+  (testing "missing auth cookie leaves auth claims absent"
+    (let [interceptor (auth/extract-auth-cookie-interceptor
+                       {:verify-token (fn [_] {:user-id (random-uuid)})})
+          result ((:enter interceptor) {:request {:cookies {}}})]
+      (is (nil? (get-in result [:grain/additional-context :auth-claims])))))
+
+  (testing "invalid token leaves auth claims absent"
+    (let [interceptor (auth/extract-auth-cookie-interceptor
+                       {:verify-token (fn [_] (throw (ex-info "invalid" {})))})
+          result ((:enter interceptor)
+                  {:request {:cookies {"auth-token" {:value "bad-token"}}}})]
+      (is (nil? (get-in result [:grain/additional-context :auth-claims])))))
+
+  (testing "valid token adds normalized auth claims and preserves existing context"
+    (let [user-id (random-uuid)
+          tenant-id (random-uuid)
+          interceptor (auth/extract-auth-cookie-interceptor
+                       {:verify-token (fn [token]
+                                        (when (= "good-token" token)
+                                          {:user-id (str user-id)
+                                           :tenant-id (str tenant-id)
+                                           :name "Example User"}))})
+          result ((:enter interceptor)
+                  {:request {:cookies {"auth-token" {:value "good-token"}}}
+                   :grain/additional-context {:request-id "req-1"}})]
+      (is (= "req-1" (get-in result [:grain/additional-context :request-id])))
+      (is (= {:user-id user-id
+              :tenant-id tenant-id
+              :name "Example User"}
+             (get-in result [:grain/additional-context :auth-claims])))))
+
+  (testing "authenticated? follows Grain merged auth context"
+    (is (auth/authenticated? {:auth-claims {:user-id (random-uuid)}}))
+    (is (not (auth/authenticated? {})))))
 
 (deftest datastar-dsl-migration-tests
   (testing "app source uses the checked Datastar DSL instead of removed v2/manual patterns"

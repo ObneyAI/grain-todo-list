@@ -4,7 +4,12 @@
 
 (defn app-shell [{:keys [title]} & body]
   [:div#app
-   [:main {:class "gallery-page min-h-screen bg-base-100 text-base-content"}
+   [:main {:class "gallery-page min-h-screen bg-base-100 text-base-content"
+           :on/signal-patch
+           {:effect
+            (ds-ui/when-effect
+             (ds-ui/present? (ds-ui/js "$__redirect"))
+             (ds-ui/action "window.location.href = $__redirect;"))}}
     [:div {:class "mx-auto max-w-6xl px-4 py-8"}
      (into
       [:div {:class "app-vista"}
