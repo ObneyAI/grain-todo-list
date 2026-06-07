@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.ui.components)
+(ns cjbarre.grain-todo-list.foundation.ui.components)
 
 (defn surface-class
   [variant class]

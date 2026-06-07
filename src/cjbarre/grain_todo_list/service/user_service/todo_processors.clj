@@ -1,6 +1,6 @@
-(ns cjbarre.grain-todo-list.user-service.todo-processors
+(ns cjbarre.grain-todo-list.service.user-service.todo-processors
   (:require [ai.obney.grain.todo-processor-v2.interface :refer [defprocessor]]
-            [cjbarre.grain-todo-list.email :as email]))
+            [cjbarre.grain-todo-list.foundation.email :as email]))
 
 (defprocessor :user email-verification-email
   {:topics #{:user/email-verification-requested}}

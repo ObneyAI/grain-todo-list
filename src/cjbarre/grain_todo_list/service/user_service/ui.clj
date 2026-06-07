@@ -1,8 +1,8 @@
-(ns cjbarre.grain-todo-list.user-service.ui
+(ns cjbarre.grain-todo-list.service.user-service.ui
   (:require [ai.obney.grain.datastar.ui :as ds-ui]
-            [cjbarre.grain-todo-list.ui :as app-ui]
-            [cjbarre.grain-todo-list.ui.components :as c]
-            [cjbarre.grain-todo-list.user-service.schemas :as schemas]))
+            [cjbarre.grain-todo-list.foundation.ui :as app-ui]
+            [cjbarre.grain-todo-list.foundation.ui.components :as c]
+            [cjbarre.grain-todo-list.service.user-service.schemas :as schemas]))
 
 (defn auth-shell
   [{:keys [title]} & body]

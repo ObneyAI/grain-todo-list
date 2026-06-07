@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.todo-list-service.read-models
+(ns cjbarre.grain-todo-list.service.todo-list-service.read-models
   (:require [ai.obney.grain.read-model-processor-v2.interface :as rmp :refer [defreadmodel]])
   (:import [java.time OffsetDateTime]))
 

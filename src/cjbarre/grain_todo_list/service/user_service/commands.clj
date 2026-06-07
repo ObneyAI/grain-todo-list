@@ -1,9 +1,9 @@
-(ns cjbarre.grain-todo-list.user-service.commands
+(ns cjbarre.grain-todo-list.service.user-service.commands
   (:require [ai.obney.grain.command-processor-v2.interface :refer [defcommand]]
             [ai.obney.grain.event-store-v3.interface :refer [->event]]
             [buddy.hashers :as hashers]
-            [cjbarre.grain-todo-list.jwt :as jwt]
-            [cjbarre.grain-todo-list.user-service.read-models :as rm]
+            [cjbarre.grain-todo-list.foundation.jwt :as jwt]
+            [cjbarre.grain-todo-list.service.user-service.read-models :as rm]
             [cognitect.anomalies :as anom]))
 
 (defn anomaly

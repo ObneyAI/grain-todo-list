@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.user-service.schemas
+(ns cjbarre.grain-todo-list.service.user-service.schemas
   (:require [ai.obney.grain.schema-util.interface :refer [defschemas]]
             [clojure.string :as string]))
 

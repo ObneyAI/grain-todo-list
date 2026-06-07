@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.email
+(ns cjbarre.grain-todo-list.foundation.email
   (:refer-clojure :exclude [send])
   (:require [com.brunobonacci.mulog :as u]))
 

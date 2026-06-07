@@ -1,6 +1,6 @@
-(ns cjbarre.grain-todo-list.todo-list-service.ui.components
+(ns cjbarre.grain-todo-list.service.todo-list-service.ui.components
   (:require [ai.obney.grain.datastar.ui :as ds-ui]
-            [cjbarre.grain-todo-list.ui.components
+            [cjbarre.grain-todo-list.foundation.ui.components
              :refer [action-button badge badge-row chip chip-row empty-state form-class metadata-text page-section page-title panel product-label section-title select-field status-action surface surface-class text-field]]
             [clojure.string :as string]))
 

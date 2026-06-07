@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.jwt
+(ns cjbarre.grain-todo-list.foundation.jwt
   (:require [ai.obney.grain.time.interface :as time]
             [buddy.sign.jwt :as jwt]
             [tick.core :as t]))

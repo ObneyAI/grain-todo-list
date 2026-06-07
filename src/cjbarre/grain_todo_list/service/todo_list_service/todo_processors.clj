@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.todo-list-service.todo-processors
+(ns cjbarre.grain-todo-list.service.todo-list-service.todo-processors
   (:require [ai.obney.grain.todo-processor-v2.interface :as tp]))
 
 (defn start

@@ -39,29 +39,47 @@ The app uses:
 - An in-memory event store and temporary LMDB cache for local development.
 
 The code is laid out as a small Clojure project rather than a Polylith system.
-The todo domain lives under `src/cjbarre/grain_todo_list/todo_list_service/`,
-with the root app namespace handling system startup and routes.
+Foundation code lives under `src/cjbarre/grain_todo_list/foundation/`, service
+code lives under `src/cjbarre/grain_todo_list/service/`, and the root app
+namespace handles system startup and routes.
+
+## Foundation And Service Components
+
+Foundation components are small, targeted units of functionality that support
+the app as a whole. They hold shared infrastructure and reusable primitives,
+such as app UI chrome, email delivery, JWT helpers, and auth interceptors.
+
+Service components own state changes in an area of the domain. When visualized,
+they should look like Event Models and information systems: commands introduce
+changes, events record what happened, read models describe useful views of
+state, and queries present that information back to users.
 
 ## Project Map
 
 ```text
 .
-├── src/cjbarre/grain_todo_list.clj               # Integrant system, routes, lifecycle
-├── src/cjbarre/grain_todo_list/ui.clj            # App shell and page chrome
-├── src/cjbarre/grain_todo_list/ui/components.clj # Reusable visual primitives
-├── src/cjbarre/grain_todo_list/todo_list_service/
-│   ├── schemas.clj                               # Command, event, query, read-model schemas
-│   ├── read_models.clj                           # Reducers and projection helpers
-│   ├── commands.clj                              # Command validation and event emission
-│   ├── queries.clj                               # Query assembly and UI render boundary
-│   ├── ui.clj                                    # Todo page composition
-│   ├── ui/components.clj                         # Todo controls, cards, lists, gallery specimens
-│   ├── todo_processors.clj                       # Todo processor lifecycle
-│   └── periodic_tasks.clj                        # Periodic trigger lifecycle
-├── css/main.css                                  # Tailwind/DaisyUI input CSS
-├── resources/public/                             # Generated static assets
-├── test/                                         # Clojure tests
-└── doc/pattern-compendium.md                     # Detailed architecture reference
+├── src/cjbarre/grain_todo_list.clj                    # Integrant system, routes, lifecycle
+├── src/cjbarre/grain_todo_list/foundation/
+│   ├── ui.clj                                         # App shell and page chrome
+│   ├── ui/components.clj                              # Reusable visual primitives
+│   ├── email.clj                                      # Email boundary
+│   ├── jwt.clj                                        # JWT helpers
+│   └── auth_interceptors.clj                          # Auth cookie interceptors
+├── src/cjbarre/grain_todo_list/service/
+│   ├── todo_list_service/                             # Todo domain service component
+│   │   ├── schemas.clj                                # Command, event, query, read-model schemas
+│   │   ├── read_models.clj                            # Reducers and projection helpers
+│   │   ├── commands.clj                               # Command validation and event emission
+│   │   ├── queries.clj                                # Query assembly and UI render boundary
+│   │   ├── ui.clj                                     # Todo page composition
+│   │   ├── ui/components.clj                          # Todo controls, cards, lists, gallery specimens
+│   │   ├── todo_processors.clj                        # Todo processor lifecycle
+│   │   └── periodic_tasks.clj                         # Periodic trigger lifecycle
+│   └── user_service/                                  # User account service component
+├── css/main.css                                       # Tailwind/DaisyUI input CSS
+├── resources/public/                                  # Generated static assets
+├── test/                                              # Clojure tests
+└── doc/pattern-compendium.md                          # Detailed architecture reference
 ```
 
 ## Requirements

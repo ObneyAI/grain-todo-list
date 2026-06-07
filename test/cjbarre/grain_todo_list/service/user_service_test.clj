@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.user-service-test
+(ns cjbarre.grain-todo-list.service.user-service-test
   (:require [ai.obney.grain.command-processor-v2.interface :as cp]
             [ai.obney.grain.datastar.interface :as ds]
             [ai.obney.grain.event-store-v3.interface :as es]
@@ -7,14 +7,14 @@
             [ai.obney.grain.query-processor.interface :as qp]
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
             [buddy.hashers :as hashers]
-            [cjbarre.auth-interceptors :as auth]
-            [cjbarre.grain-todo-list.email :as email]
-            [cjbarre.grain-todo-list.jwt :as jwt]
-            [cjbarre.grain-todo-list.user-service.commands]
-            [cjbarre.grain-todo-list.user-service.queries]
-            [cjbarre.grain-todo-list.user-service.read-models :as rm]
-            [cjbarre.grain-todo-list.user-service.schemas]
-            [cjbarre.grain-todo-list.user-service.todo-processors]
+            [cjbarre.grain-todo-list.foundation.auth-interceptors :as auth]
+            [cjbarre.grain-todo-list.foundation.email :as email]
+            [cjbarre.grain-todo-list.foundation.jwt :as jwt]
+            [cjbarre.grain-todo-list.service.user-service.commands]
+            [cjbarre.grain-todo-list.service.user-service.queries]
+            [cjbarre.grain-todo-list.service.user-service.read-models :as rm]
+            [cjbarre.grain-todo-list.service.user-service.schemas]
+            [cjbarre.grain-todo-list.service.user-service.todo-processors]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as string]
@@ -223,7 +223,7 @@
                                :confirm-password "ValidPass1"})
             event (event-of-type sign-up :user/email-verification-requested)
             verification-token (:verification-token event)
-            processor-var (resolve 'cjbarre.grain-todo-list.user-service.todo-processors/user-email-verification-email)
+            processor-var (resolve 'cjbarre.grain-todo-list.service.user-service.todo-processors/user-email-verification-email)
             result ((deref processor-var)
                     (assoc ctx :event event))]
         ((:result/effect result))
@@ -249,7 +249,7 @@
         (is (= reset-token (rm/pending-reset-token ctx user-id)))
 
         (testing "reset event can be delivered by logger email"
-          (let [processor-var (resolve 'cjbarre.grain-todo-list.user-service.todo-processors/user-password-reset-email)
+          (let [processor-var (resolve 'cjbarre.grain-todo-list.service.user-service.todo-processors/user-password-reset-email)
                 result ((deref processor-var)
                         (assoc ctx :event event))]
             ((:result/effect result))

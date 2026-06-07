@@ -1,7 +1,7 @@
-(ns cjbarre.grain-todo-list.user-service.queries
+(ns cjbarre.grain-todo-list.service.user-service.queries
   (:require [ai.obney.grain.datastar.ui :as ds-ui]
             [ai.obney.grain.query-processor.interface :refer [defquery]]
-            [cjbarre.grain-todo-list.user-service.ui :as ui]))
+            [cjbarre.grain-todo-list.service.user-service.ui :as ui]))
 
 (defn render
   [page]

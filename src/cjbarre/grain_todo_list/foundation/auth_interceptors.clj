@@ -1,4 +1,4 @@
-(ns cjbarre.auth-interceptors
+(ns cjbarre.grain-todo-list.foundation.auth-interceptors
   (:require [cognitect.anomalies :as anom]
             [io.pedestal.interceptor :as interceptor]))
 

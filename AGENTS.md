@@ -10,10 +10,10 @@ small, direct, and useful for demonstrating Grain patterns.
 - Keep application composition in `src/cjbarre/grain_todo_list.clj`: Integrant
   system, routes, lifecycle, and service registration.
 - Keep app-wide shell and reusable UI primitives in
-  `src/cjbarre/grain_todo_list/ui.clj` and
-  `src/cjbarre/grain_todo_list/ui/components.clj`.
+  `src/cjbarre/grain_todo_list/foundation/ui.clj` and
+  `src/cjbarre/grain_todo_list/foundation/ui/components.clj`.
 - Keep todo domain behavior under
-  `src/cjbarre/grain_todo_list/todo_list_service/`: schemas, read models,
+  `src/cjbarre/grain_todo_list/service/todo_list_service/`: schemas, read models,
   commands, queries, processors, periodic tasks, and page UI.
 - Use [doc/pattern-compendium.md](doc/pattern-compendium.md) as the detailed
   architecture reference before adding new patterns.

@@ -1,8 +1,8 @@
-(ns cjbarre.grain-todo-list.todo-list-service.ui
+(ns cjbarre.grain-todo-list.service.todo-list-service.ui
   (:require [ai.obney.grain.datastar.ui :as ds-ui]
-            [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
-            [cjbarre.grain-todo-list.ui :as app-ui]
-            [cjbarre.grain-todo-list.ui.components :as c]))
+            [cjbarre.grain-todo-list.service.todo-list-service.ui.components :as tc]
+            [cjbarre.grain-todo-list.foundation.ui :as app-ui]
+            [cjbarre.grain-todo-list.foundation.ui.components :as c]))
 
 (defn shell [{:keys [title]} & body]
   (apply app-ui/app-shell {:title title} body))

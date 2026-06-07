@@ -7,16 +7,16 @@ layout already present in the repo. Do not introduce Polylith `bases/`,
 The goal is to keep application code in a few obvious places:
 
 - `src/cjbarre/grain_todo_list.clj` - application composition, Integrant system, routes, lifecycle
-- `src/cjbarre/grain_todo_list/ui.clj` - application shell and app-level UI chrome
-- `src/cjbarre/grain_todo_list/ui/components.clj` - reusable app-wide visual primitives
-- `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` - schema constants, validation helpers, and primitive-specific `defschemas`
-- `src/cjbarre/grain_todo_list/todo_list_service/read_models.clj` - read model reducers, `defreadmodel`s, and projection helpers
-- `src/cjbarre/grain_todo_list/todo_list_service/commands.clj` - command helpers and `defcommand`s
-- `src/cjbarre/grain_todo_list/todo_list_service/queries.clj` - query data assembly and Datastar render boundary
-- `src/cjbarre/grain_todo_list/todo_list_service/ui.clj` - page-level todo UI composition
-- `src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj` - todo-specific UI controls, cards, lists, review widgets, and gallery specimens
-- `src/cjbarre/grain_todo_list/todo_list_service/todo_processors.clj` - todo processor lifecycle
-- `src/cjbarre/grain_todo_list/todo_list_service/periodic_tasks.clj` - periodic trigger lifecycle
+- `src/cjbarre/grain_todo_list/foundation/ui.clj` - application shell and app-level UI chrome
+- `src/cjbarre/grain_todo_list/foundation/ui/components.clj` - reusable app-wide visual primitives
+- `src/cjbarre/grain_todo_list/service/todo_list_service/schemas.clj` - schema constants, validation helpers, and primitive-specific `defschemas`
+- `src/cjbarre/grain_todo_list/service/todo_list_service/read_models.clj` - read model reducers, `defreadmodel`s, and projection helpers
+- `src/cjbarre/grain_todo_list/service/todo_list_service/commands.clj` - command helpers and `defcommand`s
+- `src/cjbarre/grain_todo_list/service/todo_list_service/queries.clj` - query data assembly and Datastar render boundary
+- `src/cjbarre/grain_todo_list/service/todo_list_service/ui.clj` - page-level todo UI composition
+- `src/cjbarre/grain_todo_list/service/todo_list_service/ui/components.clj` - todo-specific UI controls, cards, lists, review widgets, and gallery specimens
+- `src/cjbarre/grain_todo_list/service/todo_list_service/todo_processors.clj` - todo processor lifecycle
+- `src/cjbarre/grain_todo_list/service/todo_list_service/periodic_tasks.clj` - periodic trigger lifecycle
 
 Supporting files:
 
@@ -78,12 +78,12 @@ Application namespace pattern:
             [ai.obney.grain.query-processor.interface :as query-processor]
             [ai.obney.grain.query-request-handler.interface :as qrh]
             [ai.obney.grain.webserver.interface :as ws]
-            [cjbarre.grain-todo-list.todo-list-service.commands]
-            [cjbarre.grain-todo-list.todo-list-service.periodic-tasks :as periodic-tasks]
-            [cjbarre.grain-todo-list.todo-list-service.queries]
-            [cjbarre.grain-todo-list.todo-list-service.read-models]
-            [cjbarre.grain-todo-list.todo-list-service.schemas]
-            [cjbarre.grain-todo-list.todo-list-service.todo-processors :as todo-processors]
+            [cjbarre.grain-todo-list.service.todo-list-service.commands]
+            [cjbarre.grain-todo-list.service.todo-list-service.periodic-tasks :as periodic-tasks]
+            [cjbarre.grain-todo-list.service.todo-list-service.queries]
+            [cjbarre.grain-todo-list.service.todo-list-service.read-models]
+            [cjbarre.grain-todo-list.service.todo-list-service.schemas]
+            [cjbarre.grain-todo-list.service.todo-list-service.todo-processors :as todo-processors]
             [clojure.set :as set]
             [com.brunobonacci.mulog :as u]
             [integrant.core :as ig]
@@ -111,7 +111,7 @@ models, or page rendering in the root app namespace.
 
 ### App UI File
 
-Use `src/cjbarre/grain_todo_list/ui.clj` for application-level UI chrome:
+Use `src/cjbarre/grain_todo_list/foundation/ui.clj` for application-level UI chrome:
 
 - `app-shell` and shared page container structure
 - app-level error display
@@ -122,7 +122,7 @@ such as `error`, but it should not depend on todo service widgets.
 
 ### App Components UI File
 
-Use `src/cjbarre/grain_todo_list/ui/components.clj` for reusable app-wide visual
+Use `src/cjbarre/grain_todo_list/foundation/ui/components.clj` for reusable app-wide visual
 primitives:
 
 - buttons, chips, fields, panels, lists, cards, and surfaces
@@ -135,7 +135,7 @@ todo service UI component namespace and should use the checked DSL.
 
 ### Service Files
 
-Use `src/cjbarre/grain_todo_list/todo_list_service/` for todo domain behavior:
+Use `src/cjbarre/grain_todo_list/service/todo_list_service/` for todo domain behavior:
 
 - `schemas.clj` owns enum constants, validation helpers, and separate `defschemas` forms for common types, events, commands, queries, and read models.
 - `read_models.clj` owns event-type sets, reducer multimethods, `defreadmodel`s, and projection helper functions.
@@ -286,11 +286,11 @@ Every Datastar query should lower checked UI through `ds-ui/hiccup` before
 returning `:datastar/hiccup`:
 
 ```clojure
-(ns cjbarre.grain-todo-list.todo-list-service.queries
+(ns cjbarre.grain-todo-list.service.todo-list-service.queries
   (:require [ai.obney.grain.datastar.ui :as ds-ui]
             [ai.obney.grain.query-processor.interface :refer [defquery]]
-            [cjbarre.grain-todo-list.todo-list-service.read-models :as rm]
-            [cjbarre.grain-todo-list.todo-list-service.ui :as ui]))
+            [cjbarre.grain-todo-list.service.todo-list-service.read-models :as rm]
+            [cjbarre.grain-todo-list.service.todo-list-service.ui :as ui]))
 
 (defn render [page]
   (ds-ui/hiccup page))
@@ -854,11 +854,11 @@ When reading Grain or Polylith examples, translate paths like this:
 | Example path | This project |
 | --- | --- |
 | `bases/web-api/src/.../core.clj` | `src/cjbarre/grain_todo_list.clj` |
-| `components/{service}/core/schemas.clj` | `src/cjbarre/grain_todo_list/todo_list_service/schemas.clj` |
-| `components/{service}/core/commands.clj` | `src/cjbarre/grain_todo_list/todo_list_service/commands.clj` |
-| `components/{service}/core/queries.clj` | `src/cjbarre/grain_todo_list/todo_list_service/queries.clj` |
-| `components/{service}/core/read_models.clj` | `src/cjbarre/grain_todo_list/todo_list_service/read_models.clj` |
-| `components/{service}/core/views.clj` | `src/cjbarre/grain_todo_list/todo_list_service/ui.clj` |
+| `components/{service}/core/schemas.clj` | `src/cjbarre/grain_todo_list/service/todo_list_service/schemas.clj` |
+| `components/{service}/core/commands.clj` | `src/cjbarre/grain_todo_list/service/todo_list_service/commands.clj` |
+| `components/{service}/core/queries.clj` | `src/cjbarre/grain_todo_list/service/todo_list_service/queries.clj` |
+| `components/{service}/core/read_models.clj` | `src/cjbarre/grain_todo_list/service/todo_list_service/read_models.clj` |
+| `components/{service}/core/views.clj` | `src/cjbarre/grain_todo_list/service/todo_list_service/ui.clj` |
 | `components/{service}/interface.clj` | no app-local equivalent; require the local namespace directly |
 | `bases/web-api/resources/.../public/css/main.css` | `resources/public/css/main.css` |
 

@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.user-service.read-models
+(ns cjbarre.grain-todo-list.service.user-service.read-models
   (:require [ai.obney.grain.read-model-processor-v2.interface :as rmp :refer [defreadmodel]]
             [clojure.string :as string]))
 

@@ -1,4 +1,4 @@
-(ns cjbarre.grain-todo-list.todo-list-service.periodic-tasks
+(ns cjbarre.grain-todo-list.service.todo-list-service.periodic-tasks
   (:require [ai.obney.grain.event-store-v3.interface :as es]
             [ai.obney.grain.periodic-task.interface :as pt]))
 

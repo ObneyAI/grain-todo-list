@@ -6,12 +6,12 @@
             [ai.obney.grain.kv-store-lmdb.interface :as lmdb]
             [ai.obney.grain.query-processor.interface :as qp]
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
-            [cjbarre.auth-interceptors :as auth]
+            [cjbarre.grain-todo-list.foundation.auth-interceptors :as auth]
             [cjbarre.grain-todo-list :as app]
-            [cjbarre.grain-todo-list.todo-list-service.read-models :as todo-read-models]
-            [cjbarre.grain-todo-list.todo-list-service.ui :as ui]
-            [cjbarre.grain-todo-list.todo-list-service.ui.components :as tc]
-            [cjbarre.grain-todo-list.ui.components :as c]
+            [cjbarre.grain-todo-list.service.todo-list-service.read-models :as todo-read-models]
+            [cjbarre.grain-todo-list.service.todo-list-service.ui :as ui]
+            [cjbarre.grain-todo-list.service.todo-list-service.ui.components :as tc]
+            [cjbarre.grain-todo-list.foundation.ui.components :as c]
             [clojure.string :as string]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [cognitect.anomalies :as anom]
@@ -612,21 +612,21 @@
   (testing "app source uses the checked Datastar DSL instead of removed v2/manual patterns"
     (let [source (str (slurp "src/cjbarre/grain_todo_list.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/ui.clj")
+                      (slurp "src/cjbarre/grain_todo_list/foundation/ui.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/commands.clj")
+                      (slurp "src/cjbarre/grain_todo_list/service/todo_list_service/commands.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/queries.clj")
+                      (slurp "src/cjbarre/grain_todo_list/service/todo_list_service/queries.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/read_models.clj")
+                      (slurp "src/cjbarre/grain_todo_list/service/todo_list_service/read_models.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/schemas.clj")
+                      (slurp "src/cjbarre/grain_todo_list/service/todo_list_service/schemas.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/ui.clj")
+                      (slurp "src/cjbarre/grain_todo_list/service/todo_list_service/ui.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/todo_list_service/ui/components.clj")
+                      (slurp "src/cjbarre/grain_todo_list/service/todo_list_service/ui/components.clj")
                       "\n"
-                      (slurp "src/cjbarre/grain_todo_list/ui/components.clj"))
+                      (slurp "src/cjbarre/grain_todo_list/foundation/ui/components.clj"))
           deprecated-patterns ["ds/action-form"
                                "ds/bind"
                                "ds/signals"
