@@ -22,5 +22,5 @@
 
 (defn action-error []
   [:div {:class "alert alert-error mb-4"
-         :bind/show (ds-ui/js "$error")}
+         :bind/show (ds-ui/js "$error && (!$fieldErrors || Object.keys($fieldErrors).length === 0)")}
    [:span {:bind/text (ds-ui/js "$error")}]])

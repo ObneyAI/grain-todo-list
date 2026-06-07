@@ -10,9 +10,20 @@
   [category message]
   {::anom/category category ::anom/message message})
 
+(defn field-anomaly
+  [category message field field-message]
+  (assoc (anomaly category message) :error/explain {field [field-message]}))
+
 (defn conflict [message] (anomaly ::anom/conflict message))
+(defn field-conflict [message field field-message]
+  (field-anomaly ::anom/conflict message field field-message))
 (defn forbidden [message] (anomaly ::anom/forbidden message))
 (defn not-found [message] (anomaly ::anom/not-found message))
+
+(defn invalid-credentials []
+  (field-conflict "Invalid credentials."
+                  :password
+                  "Invalid credentials."))
 
 (defn make-event
   [event]
@@ -51,10 +62,20 @@
 
 (defcommand :user sign-up
   {:authorized? (constantly true)}
-  [{{:keys [email-address password]} :command :as context}]
+  [{{:keys [email-address password confirm-password]} :command :as context}]
   (let [email-address (rm/normalize-email email-address)]
-    (if (contains? (rm/email-addresses context) email-address)
-      (conflict "Email already registered.")
+    (cond
+      (contains? (rm/email-addresses context) email-address)
+      (field-conflict "Email already registered."
+                      :email-address
+                      "An account already exists for this email.")
+
+      (not= password confirm-password)
+      (field-conflict "Passwords do not match."
+                      :confirm-password
+                      "Passwords do not match.")
+
+      :else
       (let [user-id (random-uuid)]
         {:command-result/events
          (let [user {:user/id user-id
@@ -81,10 +102,10 @@
          :as user} (rm/user-by-email context email-address)]
     (cond
       (nil? user)
-      (conflict "Invalid credentials.")
+      (invalid-credentials)
 
       (not (:valid (hashers/verify password stored-password)))
-      (conflict "Invalid credentials.")
+      (invalid-credentials)
 
       (false? active?)
       (forbidden "Account is inactive.")

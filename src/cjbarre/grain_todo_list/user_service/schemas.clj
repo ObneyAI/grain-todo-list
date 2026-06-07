@@ -5,7 +5,7 @@
 (def email-re #"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 (def password-requirements
-  "Password must be at least 8 characters and contain an uppercase letter, a lowercase letter, and a number.")
+  "Use at least 8 characters with uppercase, lowercase, and a number.")
 
 (defn non-blank-string?
   [x]
@@ -64,7 +64,8 @@
 (defschemas command-schemas
   {:user/sign-up [:map
                   [:email-address ::email]
-                  [:password ::password]]
+                  [:password ::password]
+                  [:confirm-password ::password]]
    :user/login [:map
                 [:email-address [:string {:min 1 :error/message "Email is required"}]]
                 [:password [:string {:min 1 :error/message "Password is required"}]]]

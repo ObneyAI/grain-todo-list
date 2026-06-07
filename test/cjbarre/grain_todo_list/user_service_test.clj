@@ -107,7 +107,8 @@
     (is (m/validate :user/sign-up
                     (command :user/sign-up
                              {:email-address "user@example.com"
-                              :password "ValidPass1"})))
+                              :password "ValidPass1"
+                              :confirm-password "ValidPass1"})))
     (is (m/validate :user/login
                     (command :user/login
                              {:email-address "user@example.com"
@@ -129,7 +130,8 @@
    (fn [ctx]
      (let [sign-up (process! ctx :user/sign-up
                              {:email-address "USER@Example.com"
-                              :password "ValidPass1"})
+                              :password "ValidPass1"
+                              :confirm-password "ValidPass1"})
            signed-up (event-of-type sign-up :user/signed-up)
            verification-requested (event-of-type sign-up :user/email-verification-requested)
            verification-token (:verification-token verification-requested)
@@ -147,7 +149,23 @@
               (::anom/category
                (process! ctx :user/sign-up
                          {:email-address "user@example.com"
-                          :password "ValidPass1"}))))
+                          :password "ValidPass1"
+                          :confirm-password "ValidPass1"}))))
+       (is (= ["An account already exists for this email."]
+              (:email-address (:error/explain
+                               (process! ctx :user/sign-up
+                                         {:email-address "user@example.com"
+                                          :password "ValidPass1"
+                                          :confirm-password "ValidPass1"})))))
+
+       (testing "password confirmation mismatch is field keyed"
+         (let [mismatch (process! ctx :user/sign-up
+                                  {:email-address "new@example.com"
+                                   :password "ValidPass1"
+                                   :confirm-password "Different1"})]
+           (is (= ::anom/conflict (::anom/category mismatch)))
+           (is (= ["Passwords do not match."]
+                  (:confirm-password (:error/explain mismatch))))))
 
        (testing "login returns a valid auth token before email verification"
          (let [login (process! ctx :user/login
@@ -171,11 +189,18 @@
            (is (= ::anom/conflict (::anom/category reused)))))
 
        (testing "login rejects bad credentials"
-         (is (= ::anom/conflict
-                (::anom/category
-                 (process! ctx :user/login
-                           {:email-address "user@example.com"
-                            :password "WrongPass1"})))))
+         (let [wrong-password (process! ctx :user/login
+                                        {:email-address "user@example.com"
+                                         :password "WrongPass1"})
+               unknown-email (process! ctx :user/login
+                                       {:email-address "missing@example.com"
+                                        :password "WrongPass1"})]
+           (is (= ::anom/conflict (::anom/category wrong-password)))
+           (is (= ["Invalid credentials."]
+                  (:password (:error/explain wrong-password))))
+           (is (= ::anom/conflict (::anom/category unknown-email)))
+           (is (= ["Invalid credentials."]
+                  (:password (:error/explain unknown-email))))))
 
        (testing "logout invalidates existing tokens"
          (let [login (process! ctx :user/login
@@ -194,7 +219,8 @@
     (fn [ctx]
       (let [sign-up (process! ctx :user/sign-up
                               {:email-address "verify@example.com"
-                               :password "ValidPass1"})
+                               :password "ValidPass1"
+                               :confirm-password "ValidPass1"})
             event (event-of-type sign-up :user/email-verification-requested)
             verification-token (:verification-token event)
             processor-var (resolve 'cjbarre.grain-todo-list.user-service.todo-processors/user-email-verification-email)
@@ -212,7 +238,8 @@
     (fn [ctx]
       (let [sign-up (process! ctx :user/sign-up
                               {:email-address "reset@example.com"
-                               :password "ValidPass1"})
+                               :password "ValidPass1"
+                               :confirm-password "ValidPass1"})
             user-id (:user-id (event-of-type sign-up :user/signed-up))
             request (process! ctx :user/request-password-reset
                               {:email-address "reset@example.com"})
@@ -254,7 +281,8 @@
     (fn [ctx]
       (let [sign-up (process! ctx :user/sign-up
                               {:email-address "cookie@example.com"
-                               :password "ValidPass1"})
+                               :password "ValidPass1"
+                               :confirm-password "ValidPass1"})
             user-id (:user-id (event-of-type sign-up :user/signed-up))
             handler (ds/action-handler ctx {})]
         (with-redefs [sse/start-stream
@@ -305,5 +333,11 @@
               attrs (filter map? leaves)]
           (is (= :div#app (first (:datastar/hiccup result))))
           (is (some #(contains? % :data-on:submit__prevent) attrs))
+          (when (= query-name :user/sign-in-page)
+            (is (some #(contains? % :data-on-signal-patch) attrs))
+            (is (some #(and (map? %)
+                            (string? (:data-text %))
+                            (string/includes? (:data-text %) "password-error"))
+                      attrs)))
           (is (not (some #(and (string? %) (re-find #"flash|staff|admin|role|permission|magic" %))
                          leaves))))))))
