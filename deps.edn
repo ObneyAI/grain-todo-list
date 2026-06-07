@@ -1,17 +1,17 @@
 {:paths ["src" "resources"]
  :deps {obneyai/grain-core-v2
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "3db1781462d316570e53448b778d00c844053fd3"
+         :sha "042cf65ef2382256b75d80efe1ac942b00fafac5"
          :deps/root "projects/grain-core-v2"}
 
         obneyai/grain-datastar
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "3db1781462d316570e53448b778d00c844053fd3"
+         :sha "042cf65ef2382256b75d80efe1ac942b00fafac5"
          :deps/root "projects/grain-datastar"}
 
         obneyai/grain-event-store-sqlite-v3
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :sha "3db1781462d316570e53448b778d00c844053fd3"
+         :sha "042cf65ef2382256b75d80efe1ac942b00fafac5"
          :deps/root "projects/grain-event-store-sqlite-v3"}
 
         obneyai/orc {:git/url "https://github.com/ObneyAI/orc.git"
@@ -20,7 +20,7 @@
 
         obneyai/grain-code-agent-tools
         {:git/url "https://github.com/ObneyAI/grain.git"
-         :git/sha "3db1781462d316570e53448b778d00c844053fd3"
+         :git/sha "042cf65ef2382256b75d80efe1ac942b00fafac5"
          :deps/root "projects/grain-code-agent-tools"}
 
         org.clojure/data.json {:mvn/version "2.5.1"}

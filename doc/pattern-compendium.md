@@ -354,6 +354,12 @@ Use `ds-ui/with-signals` for component-local client state:
   [:input {:bind/value title}])
 ```
 
+Signal options:
+
+- `:init` declares the initial client value
+- `:name` gives a semantic generated-name base when tests or interop need one
+- `:stable? true` uses the exact `:name` as intentional page-level shared state
+
 Nested or repeated components may reuse local signal names. The DSL owns signal
 isolation and generates scoped Datastar names during `ds-ui/hiccup` lowering:
 
@@ -367,6 +373,13 @@ Application code should not manually build `data-signals` strings or call
 `ds-ui/with-signal-scope` for normal UI. Reserve explicit signal scopes for
 framework code, tests, or rare raw interop that the checked DSL cannot express.
 
+Use stable signals only for page-level state that independent patches must
+share, such as a selected row id used by a list, detail panel, and dialog. Do
+not use stable signals to make component-local generated names pretty.
+
+Use `ds-ui/indexed` only when repeated inputs edit elements inside one collection
+signal and the whole collection is later sent in a command or refresh payload.
+
 ### Bindings
 
 Checked bindings lower to Datastar attributes:
@@ -376,11 +389,24 @@ Checked bindings lower to Datastar attributes:
 [:p {:bind/text (ds-ui/trimmed title)}]
 [:section {:bind/show (ds-ui/js "$error")}]
 [:button {:bind/attr {:disabled saving?}}]
+[:input {:type "checkbox"
+         :bind/prop {:checked selected?}}]
+[:canvas {:morph/ignore true}]
 ```
 
 Use `:bind/value` for form values, `:bind/text` for text content,
 `:bind/show` for visibility, `:bind/class` for class expressions, and
-`:bind/attr` for attribute maps.
+`:bind/attr` for attribute maps. Use `:bind/prop` for DOM properties such as
+checkbox `checked`. Use `:morph/ignore` for browser-owned DOM state that
+Datastar should not morph, such as canvas or third-party controlled content.
+
+Use element-level `:effect` only for reactive Datastar effects that should run
+when the element is initialized or patched:
+
+```clojure
+[:section {:effect (ds-ui/when-effect stale?
+                     (ds-ui/refresh :todo/tasks-page {}))}]
+```
 
 ### Events And Effects
 
@@ -395,6 +421,16 @@ Checked events use explicit maps:
                                       {:title (ds-ui/trimmed title)})
                       (ds-ui/reset-signal title))
              :modifiers {:prevent true}}}
+```
+
+Use `:on/signal-patch` for Datastar's signal patch hook when a signal change
+should refresh a server-rendered region:
+
+```clojure
+{:on/signal-patch
+ {:effect (ds-ui/when-effect selected-task-id
+            (ds-ui/refresh :todo/task-page
+                           {:task-id selected-task-id}))}}
 ```
 
 Common effects:
@@ -420,14 +456,20 @@ Useful expression helpers:
 ```clojure
 (ds-ui/trimmed title)
 (ds-ui/num due-within-days)
+(ds-ui/num-cents amount)
 (ds-ui/present? title)
 (ds-ui/changed? title old-title)
 (ds-ui/evt :key)
+(ds-ui/indexed amounts idx)
 (ds-ui/js "Math.max(0, " (ds-ui/num amount) ")")
 ```
 
 Prefer checked expression helpers. Use `ds-ui/js` only when the checked
 vocabulary cannot express the condition cleanly.
+
+Use `ds-ui/num-cents` for money inputs whose command schema expects integer
+cents. Use `ds-ui/indexed` for a single element inside a collection signal; pass
+the collection signal itself when dispatching the whole collection.
 
 ### Forms
 
@@ -645,8 +687,12 @@ Do not use these patterns for new code:
 - unescaped string interpolation into Datastar event JavaScript
 - literal app hrefs such as `"/task?task-id=..."`
 - raw `data-signals`, `data-bind`, or `data-on:*` for behavior the checked DSL supports
+- raw `data-ignore-morph` when `:morph/ignore` can express the intent
+- raw DOM property effects when `:bind/prop` can express the intent
 - broad app-owned Datastar wrappers that hide the checked DSL
 - `:datastar/fps` for normal Grain state pages
+- `ds-ui/defcomponent` as a default component style; ordinary pure functions are
+  clearer in this teaching app
 
 Raw `data-*` attributes, `ds-ui/action`, and `ds-ui/js` are migration or interop
 escape hatches. Any production use should be small and easy to justify.
@@ -667,9 +713,12 @@ For this project, add todo behavior inside the existing local service component.
 8. Add or update todo-specific UI widgets in `todo_list_service/ui/components.clj`.
 9. Make query handlers call page functions and lower with `ds-ui/hiccup`.
 10. Use checked DSL behavior: `with-signals`, `:bind/*`, `:on/*`, `dispatch`, `refresh`, and `href`.
-11. Add route wiring in the root `::routes` only if Grain route helpers do not already provide it.
-12. Run `npm run css:build` after adding new Tailwind classes.
-13. Start the app from the REPL with `(def app (app/start))`.
+11. Use newer checked forms when they match the behavior:
+   `:bind/prop`, `:morph/ignore`, element `:effect`, `:on/signal-patch`,
+   `ds-ui/indexed`, `ds-ui/num-cents`, and stable signals.
+12. Add route wiring in the root `::routes` only if Grain route helpers do not already provide it.
+13. Run `npm run css:build` after adding new Tailwind classes.
+14. Start the app from the REPL with `(def app (app/start))`.
 
 Only add another service directory if the app grows a second domain with its own
 schemas, commands, queries, read models, and UI.
@@ -699,7 +748,7 @@ npm run css:build
 After a Datastar UI migration, grep for old patterns:
 
 ```sh
-rg -n "grain-datastar-v2|datastar_v2|ds/action-route|command-click|command-assignments|data-signals|signal-ref|@post\\(\\$__grainAction\\)|@post\\(\\$__grainStream\\)|:href \\\"/" src doc/pattern-compendium.md
+rg -n "grain-datastar-v2|datastar_v2|ds/action-route|command-click|command-assignments|data-signals|signal-ref|with-signal-scope|lower-effect|lower-expr|data-ignore-morph|@post\\(\\$__grainAction\\)|@post\\(\\$__grainStream\\)|:href \\\"/" src doc/pattern-compendium.md
 ```
 
 Remaining doc matches should appear only in the avoid-pattern checklist or grep
@@ -777,6 +826,18 @@ If a signal-carrying read does not re-render:
 - confirm the target query declares `:datastar/path`
 - confirm the query reads submitted params from request/query context
 - confirm the stream route is generated by `ds/routes`
+
+If page-level UI state must survive independent patches:
+
+- prefer ordinary scoped `with-signals` first
+- use `{:stable? true :name "..."}` only for intentional shared page state
+- verify the stable signal is part of the page contract, not a component detail
+
+If repeated row inputs edit one collection signal:
+
+- bind row controls with `ds-ui/indexed`
+- dispatch or refresh with the parent collection signal
+- confirm row count changes replace the collection `:init` on re-render
 
 If CSS is missing:
 
