@@ -165,6 +165,7 @@
                middlewares/cookies
                (auth/extract-auth-cookie-interceptor
                 {:verify-token auth-token-verifier})
+               auth/current-user-context-interceptor
                auth/auth-cookie-interceptor))))
 
 (defmethod ig/halt-key! ::webserver [_ webserver]
@@ -189,4 +190,3 @@
   (def app (start))
   (stop app)
   )
-

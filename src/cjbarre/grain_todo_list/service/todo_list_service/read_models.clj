@@ -31,9 +31,10 @@
 (defmulti tasks* (fn [_state event] (:event/type event)))
 
 (defmethod tasks* :todo/task-captured
-  [state {:keys [task-id title status order project-id due-within-days due-within-set-at]}]
+  [state {:keys [user-id task-id title status order project-id due-within-days due-within-set-at]}]
   (assoc state task-id
-         (cond-> {:task-id task-id
+         (cond-> {:user-id user-id
+                  :task-id task-id
                   :title title
                   :status status
                   :order order}
@@ -93,8 +94,8 @@
 (defmulti projects* (fn [_state event] (:event/type event)))
 
 (defmethod projects* :todo/project-created
-  [state {:keys [project-id name status]}]
-  (assoc state project-id {:project-id project-id :name name :status status}))
+  [state {:keys [user-id project-id name status]}]
+  (assoc state project-id {:user-id user-id :project-id project-id :name name :status status}))
 
 (defmethod projects* :todo/project-renamed
   [state {:keys [project-id name]}]
@@ -122,8 +123,9 @@
 (defmulti weekly-review* (fn [_state event] (:event/type event)))
 
 (defmethod weekly-review* :todo/weekly-review-started
-  [_state {:keys [review-id started-at]}]
-  {:review-id review-id
+  [_state {:keys [user-id review-id started-at]}]
+  {:user-id user-id
+   :review-id review-id
    :status :active
    :started-at started-at
    :reviewed-project-ids #{}
@@ -148,9 +150,20 @@
   [state event]
   (weekly-review* state event))
 
-(defn all-tasks [ctx] (rmp/project ctx :todo/tasks))
-(defn all-projects [ctx] (rmp/project ctx :todo/projects))
-(defn current-weekly-review [ctx] (rmp/project ctx :todo/weekly-review))
+(defn user-scope
+  [ctx]
+  (when-let [user-id (:current-user/id ctx)]
+    {:tags #{[:user user-id]}}))
+
+(defn project-for-user
+  [ctx read-model-name]
+  (if-let [scope (user-scope ctx)]
+    (rmp/project ctx read-model-name scope)
+    (rmp/project ctx read-model-name {:tags #{[:user nil]}})))
+
+(defn all-tasks [ctx] (project-for-user ctx :todo/tasks))
+(defn all-projects [ctx] (project-for-user ctx :todo/projects))
+(defn current-weekly-review [ctx] (project-for-user ctx :todo/weekly-review))
 
 (defn active-task?
   [task]

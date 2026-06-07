@@ -8,6 +8,8 @@
             [ai.obney.grain.read-model-processor-v2.interface :as rmp]
             [cjbarre.grain-todo-list.foundation.auth-interceptors :as auth]
             [cjbarre.grain-todo-list :as app]
+            [cjbarre.grain-todo-list.service.todo-list-service.commands :as todo-commands]
+            [cjbarre.grain-todo-list.service.todo-list-service.queries :as todo-queries]
             [cjbarre.grain-todo-list.service.todo-list-service.read-models :as todo-read-models]
             [cjbarre.grain-todo-list.service.todo-list-service.ui :as ui]
             [cjbarre.grain-todo-list.service.todo-list-service.ui.components :as tc]
@@ -22,6 +24,8 @@
 (def task-2-id #uuid "00000000-0000-0000-0000-000000000102")
 (def project-id #uuid "00000000-0000-0000-0000-000000000201")
 (def review-id #uuid "00000000-0000-0000-0000-000000000301")
+(def user-id #uuid "00000000-0000-0000-0000-000000000401")
+(def other-user-id #uuid "00000000-0000-0000-0000-000000000402")
 (def now (OffsetDateTime/parse "2026-05-22T12:00:00Z"))
 (def later (OffsetDateTime/parse "2026-05-23T12:00:00Z"))
 
@@ -72,7 +76,9 @@
   [f]
   (let [ctx (test-context)]
     (try
-      (f ctx)
+      (f (assoc ctx
+                :auth-claims {:user-id user-id}
+                :current-user/id user-id))
       (finally
         ((::stop ctx))))))
 
@@ -108,15 +114,15 @@
 
 (defn project-tasks
   [ctx]
-  (rmp/project ctx :todo/tasks))
+  (todo-read-models/all-tasks ctx))
 
 (defn project-projects
   [ctx]
-  (rmp/project ctx :todo/projects))
+  (todo-read-models/all-projects ctx))
 
 (defn project-review
   [ctx]
-  (rmp/project ctx :todo/weekly-review))
+  (todo-read-models/current-weekly-review ctx))
 
 (use-fixtures :each
   (fn [f]
@@ -143,7 +149,8 @@
                     {:event/id (random-uuid)
                      :event/timestamp now
                      :event/type :todo/task-captured
-                     :event/tags #{[:task task-id]}
+                     :event/tags #{[:task task-id] [:user user-id]}
+                     :user-id user-id
                      :task-id task-id
                      :title "Plan project"
                      :status :active
@@ -151,7 +158,8 @@
                      :due-within-days 3
                      :due-within-set-at later})))
     (is (m/validate :todo/tasks
-                    {task-id {:task-id task-id
+                    {task-id {:user-id user-id
+                              :task-id task-id
                               :title "Projected task"
                               :status :active
                               :order 1000
@@ -159,7 +167,8 @@
                               :due-within-days 3
                               :due-within-set-at later}}))
     (is (m/validate :todo/projects
-                    {project-id {:project-id project-id
+                    {project-id {:user-id user-id
+                                 :project-id project-id
                                  :name "Projected project"
                                  :status :active
                                  :task-counts {:active 1
@@ -168,7 +177,8 @@
                                                :archived 0}}}))
     (is (m/validate :todo/weekly-review nil))
     (is (m/validate :todo/weekly-review
-                    {:review-id review-id
+                    {:user-id user-id
+                     :review-id review-id
                      :status :active
                      :started-at now
                      :reviewed-project-ids #{project-id}
@@ -188,6 +198,7 @@
   (testing "task reducer is pure and reconstructs state from event maps"
       (let [state (-> {}
                     (todo-read-models/tasks* {:event/type :todo/task-captured
+                                              :user-id user-id
                                               :task-id task-id
                                               :title "Inbox task"
                                               :status :active
@@ -211,9 +222,12 @@
     (fn [ctx]
       (testing "commands go through Grain command processor and append events"
         (let [result (process! ctx :todo/capture-task
-                               {:task-id task-id :title "Add task"})]
+                               {:task-id task-id :title "Add task"})
+              event (event-of-type result :todo/task-captured)]
           (is (not (anomaly? result)))
-          (is (event-of-type result :todo/task-captured))
+          (is event)
+          (is (= user-id (:user-id event)))
+          (is (= #{[:task task-id] [:user user-id]} (:event/tags event)))
           (is (= {:__toast "Task added."} (:datastar/signals result)))
           (is (not (contains? (:datastar/signals result) :title)))
           (is (= "Add task" (get-in (project-tasks ctx) [task-id :title])))))
@@ -266,7 +280,8 @@
        (let [result (process! ctx :todo/assign-task-to-project {:task-id task-id :project-id project-id})
              event (event-of-type result :todo/task-assigned-to-project)]
          (is event)
-         (is (= #{[:task task-id]} (:event/tags event)))
+         (is (= user-id (:user-id event)))
+         (is (= #{[:task task-id] [:user user-id]} (:event/tags event)))
          (is (= project-id (get-in (project-tasks ctx) [task-id :project-id]))))
        (is (event-of-type (process! ctx :todo/remove-task-from-project {:task-id task-id})
                           :todo/task-removed-from-project))
@@ -292,6 +307,38 @@
       (testing "helpers read real Grain projections"
         (is (= [task-2-id task-id] (map :task-id (todo-read-models/active-tasks ctx))))
         (is (= [task-2-id] (map :task-id (todo-read-models/due-soon-tasks ctx))))))))
+
+(deftest todo-auth-and-isolation-tests
+  (with-context
+    (fn [ctx]
+      (testing "todo commands require auth context"
+        (let [result (process! (dissoc ctx :auth-claims :current-user/id)
+                               :todo/capture-task
+                               {:task-id task-id :title "Blocked"})]
+          (is (anomaly? result))
+          (is (nil? (:command-result/events result)))))
+      (testing "tag-scoped projections isolate each user's todo state"
+        (let [other-ctx (assoc ctx
+                               :auth-claims {:user-id other-user-id}
+                               :current-user/id other-user-id)]
+          (process! ctx :todo/capture-task {:task-id task-id :title "Mine"})
+          (process! other-ctx :todo/capture-task {:task-id task-2-id :title "Theirs"})
+          (is (= ["Mine"] (map :title (todo-read-models/active-tasks ctx))))
+          (is (= ["Theirs"] (map :title (todo-read-models/active-tasks other-ctx))))
+          (is (empty? (todo-read-models/active-tasks (dissoc ctx :auth-claims :current-user/id))))))
+      (testing "ownership predicates authorize only the prepared current user"
+        (let [other-ctx (assoc ctx
+                               :auth-claims {:user-id other-user-id}
+                               :current-user/id other-user-id)]
+          (process! ctx :todo/create-project {:project-id project-id :name "Mine"})
+          (is (todo-commands/can-use-task? (assoc ctx :command {:task-id task-id})))
+          (is (not (todo-commands/can-use-task? (assoc other-ctx :command {:task-id task-id}))))
+          (is (todo-commands/can-capture-task? (assoc ctx :command {:project-id project-id})))
+          (is (not (todo-commands/can-capture-task? (assoc other-ctx :command {:project-id project-id}))))
+          (is (todo-queries/owns-task-query? (assoc ctx :query {:task-id task-id})))
+          (is (not (todo-queries/owns-task-query? (assoc other-ctx :query {:task-id task-id}))))
+          (is (todo-queries/owns-project-query? (assoc ctx :query {:project-id project-id})))
+          (is (not (todo-queries/owns-project-query? (assoc other-ctx :query {:project-id project-id})))))))))
 
 (deftest query-processor-tests
   (with-context
@@ -603,6 +650,12 @@
               :tenant-id tenant-id
               :name "Example User"}
              (get-in result [:grain/additional-context :auth-claims])))))
+
+  (testing "current user context is prepared from normalized auth claims"
+    (let [user-id (random-uuid)
+          result ((:enter auth/current-user-context-interceptor)
+                  {:grain/additional-context {:auth-claims {:user-id user-id}}})]
+      (is (= user-id (get-in result [:grain/additional-context :current-user/id])))))
 
   (testing "authenticated? follows Grain merged auth context"
     (is (auth/authenticated? {:auth-claims {:user-id (random-uuid)}}))

@@ -1,12 +1,42 @@
 (ns cjbarre.grain-todo-list.service.todo-list-service.queries
   (:require [ai.obney.grain.datastar.ui :as ds-ui]
             [ai.obney.grain.query-processor.interface :refer [defquery]]
+            [cjbarre.grain-todo-list.foundation.auth-interceptors :as auth]
             [cjbarre.grain-todo-list.service.todo-list-service.read-models :as rm]
             [cjbarre.grain-todo-list.service.todo-list-service.ui :as ui]))
 
 (defn render
   [page]
   (ds-ui/hiccup page))
+
+(defn current-user-id
+  [ctx]
+  (or (:current-user/id ctx)
+      (auth/auth-user-id ctx)))
+
+(defn authenticated?
+  [ctx]
+  (some? (current-user-id ctx)))
+
+(defn with-current-user
+  [ctx]
+  (cond-> ctx
+    (and (nil? (:current-user/id ctx)) (current-user-id ctx))
+    (assoc :current-user/id (current-user-id ctx))))
+
+(defn owns-task-query?
+  [ctx]
+  (and (authenticated? ctx)
+       (if-let [task-id (get-in ctx [:query :task-id])]
+         (contains? (rm/all-tasks (with-current-user ctx)) task-id)
+         true)))
+
+(defn owns-project-query?
+  [ctx]
+  (and (authenticated? ctx)
+       (if-let [project-id (get-in ctx [:query :project-id])]
+         (contains? (rm/all-projects (with-current-user ctx)) project-id)
+         true)))
 
 (defn workspace-data
   [ctx]
@@ -20,7 +50,7 @@
    :review (rm/current-weekly-review ctx)})
 
 (defquery :todo home-page
-  {:authorized? (constantly true)
+  {:authorized? authenticated?
    :datastar/path "/"
    :datastar/title "Grain Todo"
    :grain/read-models {:todo/tasks 1
@@ -33,7 +63,7 @@
      :datastar/hiccup (render (ui/home-page data))}))
 
 (defquery :todo tasks-page
-  {:authorized? (constantly true)
+  {:authorized? authenticated?
    :datastar/path "/tasks"
    :datastar/title "Tasks"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
@@ -44,7 +74,7 @@
      :datastar/hiccup (render (ui/tasks-page {:tasks tasks :projects projects}))}))
 
 (defquery :todo task-page
-  {:authorized? (constantly true)
+  {:authorized? owns-task-query?
    :datastar/path "/task"
    :datastar/title "Task"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
@@ -55,7 +85,7 @@
      :datastar/hiccup (render (ui/task-page {:task task :projects projects}))}))
 
 (defquery :todo projects-page
-  {:authorized? (constantly true)
+  {:authorized? authenticated?
    :datastar/path "/projects"
    :datastar/title "Projects"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
@@ -65,7 +95,7 @@
      :datastar/hiccup (render (ui/projects-page {:projects projects}))}))
 
 (defquery :todo project-page
-  {:authorized? (constantly true)
+  {:authorized? owns-project-query?
    :datastar/path "/project"
    :datastar/title "Project"
    :grain/read-models {:todo/tasks 1 :todo/projects 1}}
@@ -83,7 +113,7 @@
                                                 :projects projects}))}))
 
 (defquery :todo review-page
-  {:authorized? (constantly true)
+  {:authorized? authenticated?
    :datastar/path "/review"
    :datastar/title "Weekly Review"
    :grain/read-models {:todo/tasks 1 :todo/projects 1 :todo/weekly-review 1}}

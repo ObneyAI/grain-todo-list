@@ -2,6 +2,7 @@
   (:require [ai.obney.grain.command-processor-v2.interface :refer [defcommand]]
             [ai.obney.grain.event-store-v3.interface :refer [->event]]
             [buddy.hashers :as hashers]
+            [cjbarre.grain-todo-list.foundation.auth-interceptors :as auth]
             [cjbarre.grain-todo-list.foundation.jwt :as jwt]
             [cjbarre.grain-todo-list.service.user-service.read-models :as rm]
             [cognitect.anomalies :as anom]))
@@ -29,10 +30,6 @@
   [event]
   (->event event))
 
-(defn authenticated?
-  [ctx]
-  (some? (:auth-claims ctx)))
-
 (defn make-session-token
   [{:keys [jwt-secret tenant-id]} user]
   (jwt/sign {:payload {:user-id (str (:user/id user))
@@ -55,10 +52,6 @@
                        :email (:user/email-address user)}
              :secret jwt-secret
              :expire-in [24 :hours]}))
-
-(defn auth-user-id
-  [context]
-  (get-in context [:auth-claims :user-id]))
 
 (defcommand :user sign-up
   {:authorized? (constantly true)}
@@ -120,9 +113,9 @@
        :datastar/signals {:__redirect "/"}})))
 
 (defcommand :user logout
-  {:authorized? authenticated?}
+  {:authorized? auth/authenticated?}
   [context]
-  (let [user-id (auth-user-id context)
+  (let [user-id (auth/auth-user-id context)
         current-version (rm/token-version context user-id)]
     (if (nil? current-version)
       (not-found "User not found.")
@@ -134,9 +127,9 @@
        :datastar/signals {:__redirect "/auth/sign-in"}})))
 
 (defcommand :user set-password
-  {:authorized? authenticated?}
+  {:authorized? auth/authenticated?}
   [{{:keys [password]} :command :as context}]
-  (let [user-id (auth-user-id context)]
+  (let [user-id (auth/auth-user-id context)]
     {:command-result/events
      [(make-event {:type :user/password-set
                    :tags #{[:user user-id]}

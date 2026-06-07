@@ -21,6 +21,7 @@
                   [:canceled {:optional true} nat-int?]
                   [:archived {:optional true} nat-int?]]
    ::task [:map
+           [:user-id :uuid]
            [:task-id :uuid]
            [:title ::non-blank-string]
            [:status ::task-status]
@@ -29,11 +30,13 @@
            [:due-within-days {:optional true} nat-int?]
            [:due-within-set-at {:optional true} :time/offset-date-time]]
    ::project [:map
+              [:user-id :uuid]
               [:project-id :uuid]
               [:name ::non-blank-string]
               [:status ::project-status]
               [:task-counts {:optional true} ::task-counts]]
    ::weekly-review [:map
+                    [:user-id :uuid]
                     [:review-id :uuid]
                     [:status ::review-status]
                     [:started-at :time/offset-date-time]
@@ -45,30 +48,31 @@
   {
    :todo/task-captured
    ::task
-   :todo/task-renamed [:map [:task-id :uuid] [:title ::non-blank-string]]
-   :todo/task-assigned-to-project [:map [:task-id :uuid] [:project-id :uuid]]
-   :todo/task-removed-from-project [:map [:task-id :uuid] [:project-id :uuid]]
+   :todo/task-renamed [:map [:user-id :uuid] [:task-id :uuid] [:title ::non-blank-string]]
+   :todo/task-assigned-to-project [:map [:user-id :uuid] [:task-id :uuid] [:project-id :uuid]]
+   :todo/task-removed-from-project [:map [:user-id :uuid] [:task-id :uuid] [:project-id :uuid]]
    :todo/task-due-within-set [:map
+                              [:user-id :uuid]
                               [:task-id :uuid]
                               [:due-within-days nat-int?]
                               [:due-within-set-at :time/offset-date-time]]
-   :todo/task-due-within-cleared [:map [:task-id :uuid]]
-   :todo/task-completed [:map [:task-id :uuid]]
-   :todo/task-archived [:map [:task-id :uuid]]
-   :todo/task-canceled [:map [:task-id :uuid]]
-   :todo/task-reactivated [:map [:task-id :uuid]]
-   :todo/task-reordered [:map [:task-id :uuid] [:order ::order]]
+   :todo/task-due-within-cleared [:map [:user-id :uuid] [:task-id :uuid]]
+   :todo/task-completed [:map [:user-id :uuid] [:task-id :uuid]]
+   :todo/task-archived [:map [:user-id :uuid] [:task-id :uuid]]
+   :todo/task-canceled [:map [:user-id :uuid] [:task-id :uuid]]
+   :todo/task-reactivated [:map [:user-id :uuid] [:task-id :uuid]]
+   :todo/task-reordered [:map [:user-id :uuid] [:task-id :uuid] [:order ::order]]
 
-   :todo/project-created [:map [:project-id :uuid] [:name ::non-blank-string] [:status ::project-status]]
-   :todo/project-renamed [:map [:project-id :uuid] [:name ::non-blank-string]]
-   :todo/project-completed [:map [:project-id :uuid]]
-   :todo/project-canceled [:map [:project-id :uuid]]
-   :todo/project-reactivated [:map [:project-id :uuid]]
+   :todo/project-created [:map [:user-id :uuid] [:project-id :uuid] [:name ::non-blank-string] [:status ::project-status]]
+   :todo/project-renamed [:map [:user-id :uuid] [:project-id :uuid] [:name ::non-blank-string]]
+   :todo/project-completed [:map [:user-id :uuid] [:project-id :uuid]]
+   :todo/project-canceled [:map [:user-id :uuid] [:project-id :uuid]]
+   :todo/project-reactivated [:map [:user-id :uuid] [:project-id :uuid]]
 
-   :todo/weekly-review-started [:map [:review-id :uuid] [:started-at :time/offset-date-time]]
-   :todo/project-reviewed [:map [:review-id :uuid] [:project-id :uuid]]
-   :todo/task-reviewed [:map [:review-id :uuid] [:task-id :uuid]]
-   :todo/weekly-review-completed [:map [:review-id :uuid] [:completed-at :time/offset-date-time]]})
+   :todo/weekly-review-started [:map [:user-id :uuid] [:review-id :uuid] [:started-at :time/offset-date-time]]
+   :todo/project-reviewed [:map [:user-id :uuid] [:review-id :uuid] [:project-id :uuid]]
+   :todo/task-reviewed [:map [:user-id :uuid] [:review-id :uuid] [:task-id :uuid]]
+   :todo/weekly-review-completed [:map [:user-id :uuid] [:review-id :uuid] [:completed-at :time/offset-date-time]]})
 
 (defschemas command-schemas
   {

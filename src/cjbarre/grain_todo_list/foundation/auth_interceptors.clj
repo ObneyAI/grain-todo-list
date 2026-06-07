@@ -6,6 +6,14 @@
   [ctx]
   (some? (:auth-claims ctx)))
 
+(defn auth-user-id
+  [ctx]
+  (get-in ctx [:auth-claims :user-id]))
+
+(defn user-tag
+  [user-id]
+  [:user user-id])
+
 (defn- parse-uuid-value
   [value]
   (cond
@@ -36,6 +44,15 @@
                        (catch Exception _ nil)))]
         (cond-> ctx
           claims (assoc-in [:grain/additional-context :auth-claims] claims))))}))
+
+(def current-user-context-interceptor
+  (interceptor/interceptor
+   {:name ::current-user-context
+    :enter
+    (fn [ctx]
+      (let [user-id (get-in ctx [:grain/additional-context :auth-claims :user-id])]
+        (cond-> ctx
+          user-id (assoc-in [:grain/additional-context :current-user/id] user-id))))}))
 
 (defn anomaly?
   [result]
