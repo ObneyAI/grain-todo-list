@@ -22,7 +22,8 @@ application:
 - Grouping work into projects and tracking project task counts.
 - Marking tasks as due within a number of days.
 - Reviewing active tasks and projects through a weekly review workflow.
-- Building UI from Grain query results with Datastar and Hiccup.
+- Building server-rendered UI from Grain query results with the Grain Datastar
+  checked UI DSL and Hiccup.
 - Organizing command handlers, event schemas, read models, query handlers,
   processors, periodic tasks, and UI in a compact Clojure app.
 
@@ -40,6 +41,28 @@ The app uses:
 The code is laid out as a small Clojure project rather than a Polylith system.
 The todo domain lives under `src/cjbarre/grain_todo_list/todo_list_service/`,
 with the root app namespace handling system startup and routes.
+
+## Project Map
+
+```text
+.
+├── src/cjbarre/grain_todo_list.clj               # Integrant system, routes, lifecycle
+├── src/cjbarre/grain_todo_list/ui.clj            # App shell and page chrome
+├── src/cjbarre/grain_todo_list/ui/components.clj # Reusable visual primitives
+├── src/cjbarre/grain_todo_list/todo_list_service/
+│   ├── schemas.clj                               # Command, event, query, read-model schemas
+│   ├── read_models.clj                           # Reducers and projection helpers
+│   ├── commands.clj                              # Command validation and event emission
+│   ├── queries.clj                               # Query assembly and UI render boundary
+│   ├── ui.clj                                    # Todo page composition
+│   ├── ui/components.clj                         # Todo controls, cards, lists, gallery specimens
+│   ├── todo_processors.clj                       # Todo processor lifecycle
+│   └── periodic_tasks.clj                        # Periodic trigger lifecycle
+├── css/main.css                                  # Tailwind/DaisyUI input CSS
+├── resources/public/                             # Generated static assets
+├── test/                                         # Clojure tests
+└── doc/pattern-compendium.md                     # Detailed architecture reference
+```
 
 ## Requirements
 
