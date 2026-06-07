@@ -1,19 +1,27 @@
 {:paths ["src" "resources"]
  :deps {obneyai/grain-core-v2
-        {:local/root "../grain/projects/grain-core-v2"}
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :git/sha "b8b20bb62cfb738d0b81c39452f5f67e8a44e61f"
+         :deps/root "projects/grain-core-v2"}
 
         obneyai/grain-datastar
-        {:local/root "../grain/projects/grain-datastar"}
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :git/sha "b8b20bb62cfb738d0b81c39452f5f67e8a44e61f"
+         :deps/root "projects/grain-datastar"}
 
         obneyai/grain-event-store-sqlite-v3
-        {:local/root "../grain/projects/grain-event-store-sqlite-v3"}
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :git/sha "b8b20bb62cfb738d0b81c39452f5f67e8a44e61f"
+         :deps/root "projects/grain-event-store-sqlite-v3"}
 
         obneyai/orc {:git/url "https://github.com/ObneyAI/orc.git"
                      :git/sha "83c315ad53449cb3e8ceba6a8b824291cf4378ae"
                      :deps/root "projects/orc"}
 
         obneyai/grain-code-agent-tools
-        {:local/root "../grain/projects/grain-code-agent-tools"}
+        {:git/url "https://github.com/ObneyAI/grain.git"
+         :git/sha "b8b20bb62cfb738d0b81c39452f5f67e8a44e61f"
+         :deps/root "projects/grain-code-agent-tools"}
 
         buddy/buddy-hashers {:mvn/version "2.0.167"}
         buddy/buddy-sign {:mvn/version "3.5.351"}
