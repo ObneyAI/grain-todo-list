@@ -101,6 +101,7 @@
    (ds-ui/with-signals [email-address {:init ""}
                         password {:init ""}
                         confirm-password {:init ""}
+                        sign-up-complete {:init false}
                         email-error {:init ""}
                         password-error {:init ""}
                         confirm-password-error {:init ""}]
@@ -118,60 +119,65 @@
                                  (ds-ui/set-signal email-error "")
                                  (ds-ui/set-signal password-error "")
                                  (ds-ui/set-signal confirm-password-error ""))]
-       [:form {:class "grid gap-4"
-               :on/signal-patch
-               {:effect (ds-ui/effects
-                         (ds-ui/set-signal email-error (field-error-value :email-address))
-                         (ds-ui/set-signal password-error (field-error-value :password))
-                         (ds-ui/set-signal confirm-password-error (field-error-value :confirm-password)))}
-               :on/submit {:effect (ds-ui/effects
-                                     clear-sign-up-errors
-                                     (ds-ui/dispatch :user/sign-up
-                                                     {:email-address email-address
-                                                      :password password
-                                                      :confirm-password confirm-password}))
-                           :modifiers {:prevent true}}}
-        (field "Email" {:id "sign-up-email"
-                        :name "email-address"
-                        :type "email"
-                        :required true
-                        :autocomplete "email"
-                        :bind/value email-address
-                        :on/input {:effect clear-sign-up-errors}})
-        (field-error email-error)
-        (field "Password" {:id "sign-up-password"
-                           :name "password"
-                           :type "password"
-                           :required true
-                           :autocomplete "new-password"
-                           :minlength "8"
-                           :bind/value password
-                           :on/input {:effect clear-sign-up-errors}})
-        (field-error password-error)
-        [:ul {:class "grid gap-1"}
-         (requirement has-length? "At least 8 characters")
-         (requirement has-uppercase? "One uppercase letter")
-         (requirement has-lowercase? "One lowercase letter")
-         (requirement has-number? "One number")]
-        (field "Confirm password" {:id "sign-up-confirm-password"
-                                   :name "confirm-password"
-                                   :type "password"
-                                   :required true
-                                   :autocomplete "new-password"
-                                   :bind/value confirm-password
-                                   :on/input {:effect clear-sign-up-errors}})
-        (field-error confirm-password-error)
-        [:p {:class "text-xs text-error"
-             :bind/show (ds-ui/js confirm-touched? " && !(" passwords-match? ")")}
-         "Passwords do not match."]
-        [:p {:class "text-xs text-success"
-             :bind/show (ds-ui/js confirm-touched? " && " passwords-match?)}
-         "Passwords match."]
-        (c/action-button {:label "Create account"
-                          :class "btn-primary"
-                          :type "submit"
-                          :disabled? true
-                          :attrs {:bind/prop {:disabled (ds-ui/js "!(" form-valid? ")")}}})]))
+       [:div {:on/signal-patch
+              {:effect (ds-ui/effects
+                        (ds-ui/set-signal sign-up-complete (ds-ui/js "$signUpComplete === true"))
+                        (ds-ui/set-signal email-error (field-error-value :email-address))
+                        (ds-ui/set-signal password-error (field-error-value :password))
+                        (ds-ui/set-signal confirm-password-error (field-error-value :confirm-password)))}}
+        [:div {:class "alert mb-4 text-success"
+               :bind/show sign-up-complete}
+         [:span "Account created. Check your email to verify your address."]]
+        [:form {:class "grid gap-4"
+                :bind/show (ds-ui/js "!(" sign-up-complete ")")
+                :on/submit {:effect (ds-ui/effects
+                                      clear-sign-up-errors
+                                      (ds-ui/dispatch :user/sign-up
+                                                      {:email-address email-address
+                                                       :password password
+                                                       :confirm-password confirm-password}))
+                            :modifiers {:prevent true}}}
+         (field "Email" {:id "sign-up-email"
+                         :name "email-address"
+                         :type "email"
+                         :required true
+                         :autocomplete "email"
+                         :bind/value email-address
+                         :on/input {:effect clear-sign-up-errors}})
+         (field-error email-error)
+         (field "Password" {:id "sign-up-password"
+                            :name "password"
+                            :type "password"
+                            :required true
+                            :autocomplete "new-password"
+                            :minlength "8"
+                            :bind/value password
+                            :on/input {:effect clear-sign-up-errors}})
+         (field-error password-error)
+         [:ul {:class "grid gap-1"}
+          (requirement has-length? "At least 8 characters")
+          (requirement has-uppercase? "One uppercase letter")
+          (requirement has-lowercase? "One lowercase letter")
+          (requirement has-number? "One number")]
+         (field "Confirm password" {:id "sign-up-confirm-password"
+                                    :name "confirm-password"
+                                    :type "password"
+                                    :required true
+                                    :autocomplete "new-password"
+                                    :bind/value confirm-password
+                                    :on/input {:effect clear-sign-up-errors}})
+         (field-error confirm-password-error)
+         [:p {:class "text-xs text-error"
+              :bind/show (ds-ui/js confirm-touched? " && !(" passwords-match? ")")}
+          "Passwords do not match."]
+         [:p {:class "text-xs text-success"
+              :bind/show (ds-ui/js confirm-touched? " && " passwords-match?)}
+          "Passwords match."]
+         (c/action-button {:label "Create account"
+                           :class "btn-primary"
+                           :type "submit"
+                           :disabled? true
+                           :attrs {:bind/prop {:disabled (ds-ui/js "!(" form-valid? ")")}}})]]))
    [:div {:class "mt-4 text-sm"}
     [:a {:class "link link-primary" :href (ds-ui/href :user/sign-in-page)} "Already have an account?"]]))
 

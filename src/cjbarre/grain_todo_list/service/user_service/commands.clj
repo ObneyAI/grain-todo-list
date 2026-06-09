@@ -84,7 +84,8 @@
                          :body {:user-id user-id
                                 :email-address email-address
                                 :verification-token verification-token}})])
-         :datastar/signals {:__toast "Account created. Check your email to verify your address."}}))))
+         :datastar/signals {:__toast "Account created. Check your email to verify your address."
+                            :signUpComplete true}}))))
 
 (defcommand :user login
   {:authorized? (constantly true)}

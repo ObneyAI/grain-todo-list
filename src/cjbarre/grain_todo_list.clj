@@ -149,9 +149,9 @@
    (ds/routes context
               {}
               {:datastar/shim-opts {:head datastar-head
-                                     :html-attrs {:data-theme "workshop"}}
+                                    :html-attrs {:data-theme "workshop"}}
                :datastar/auth-redirect {:unauthenticated "/auth/sign-in"
-                                         :unauthorized "/"}})
+                                        :unauthorized "/"}})
    #{["/actions" :post [(ds/action-handler context {})] :route-name ::actions]
      ["/healthcheck" :get [(fn [_] {:status 200 :body "OK"})] :route-name ::healthcheck]
      ["/favicon.ico" :get [(fn [_] {:status 204 :body ""})] :route-name ::favicon]}))

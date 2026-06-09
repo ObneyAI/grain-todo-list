@@ -142,6 +142,10 @@
        (is (= user-id (:user-id verification-requested)))
        (is (= verification-token
               (rm/pending-email-verification-token ctx user-id)))
+       (is (= {:__toast "Account created. Check your email to verify your address."
+               :signUpComplete true}
+              (:datastar/signals sign-up)))
+       (is (not (contains? (:datastar/signals sign-up) :__redirect)))
        (is (false? (:user/email-verified (rm/user ctx user-id))))
        (is (true? (:user/active (rm/user ctx user-id))))
        (is (:valid (hashers/verify "ValidPass1" (:password signed-up))))
@@ -338,6 +342,17 @@
             (is (some #(and (map? %)
                             (string? (:data-text %))
                             (string/includes? (:data-text %) "password-error"))
+                      attrs)))
+          (when (= query-name :user/sign-up-page)
+            (is (some #(= "Account created. Check your email to verify your address." %)
+                      leaves))
+            (is (some #(and (map? %)
+                            (string? (:data-show %))
+                            (string/includes? (:data-show %) "sign-up-complete"))
+                      attrs))
+            (is (some #(and (map? %)
+                            (string? (:data-on-signal-patch %))
+                            (string/includes? (:data-on-signal-patch %) "$signUpComplete === true"))
                       attrs)))
           (is (not (some #(and (string? %) (re-find #"flash|staff|admin|role|permission|magic" %))
                          leaves))))))))
