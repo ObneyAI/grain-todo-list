@@ -312,10 +312,18 @@ Choose query behavior by metadata:
 
 | Behavior | Metadata | Use for |
 | --- | --- | --- |
-| Static one-shot render | no `:grain/read-models` | static pages and galleries |
+| Static one-shot render | `:datastar/fps 0` | static pages and galleries |
+| Polling render | no `:grain/read-models` | fallback only; avoid relying on it |
 | Event-driven render | `:grain/read-models {...}` | app state stored through events |
 
-Do not add `:datastar/fps` for normal Grain state. Prefer event-driven reads.
+Omitting `:grain/read-models` does not make a page one-shot. Without read
+models the query falls back to polling, and `:datastar/fps` defaults to 30:
+the server re-runs the query ~30 times per second per open tab, diffing
+`:datastar/hiccup` and patching only on change. The browser sees a static
+page, but the server is in a polling loop. For a genuinely static page, set
+`:datastar/fps 0` explicitly — this is the one intended use of
+`:datastar/fps`; do not add it for normal Grain state, where event-driven
+reads are the right tool.
 
 ### Todo Processors And Periodic Tasks
 
@@ -690,7 +698,8 @@ Do not use these patterns for new code:
 - raw `data-ignore-morph` when `:morph/ignore` can express the intent
 - raw DOM property effects when `:bind/prop` can express the intent
 - broad app-owned Datastar wrappers that hide the checked DSL
-- `:datastar/fps` for normal Grain state pages
+- `:datastar/fps` for normal Grain state pages (`:datastar/fps 0` on a truly
+  static page is the exception — it is the only way to get a one-shot render)
 - `ds-ui/defcomponent` as a default component style; ordinary pure functions are
   clearer in this teaching app
 
