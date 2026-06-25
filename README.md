@@ -79,7 +79,9 @@ state, and queries present that information back to users.
 ├── css/main.css                                       # Tailwind/DaisyUI input CSS
 ├── resources/public/                                  # Generated static assets
 ├── test/                                              # Clojure tests
-└── doc/pattern-compendium.md                          # Detailed architecture reference
+├── CLAUDE.md                                           # Primary agent guide (golden path, gates)
+├── AGENTS.md                                           # Condensed agent quick-reference
+└── .claude/skills/                                     # Grain build, verification, and spec skills
 ```
 
 ## Requirements
@@ -172,5 +174,9 @@ clj-kondo --lint src test
 
 ## Agent Instructions
 
-Agent-facing implementation notes live in [AGENTS.md](AGENTS.md). The deeper
-pattern reference is [doc/pattern-compendium.md](doc/pattern-compendium.md).
+The primary agent guide is [CLAUDE.md](CLAUDE.md) — the Charter, the Grain golden
+path, self-verification with `code-agent-tools`, the Definition of Done, and the
+running/reloading discipline. [AGENTS.md](AGENTS.md) is the condensed quick
+reference. Task-specific skills (schemas, commands, read models, queries, views,
+UI components, verification, and the allium spec family) live in
+[.claude/skills/](.claude/skills/).

@@ -1,52 +1,45 @@
-# Agent Instructions
+# AGENTS.md
 
-This is a teaching project for the Grain Sessions video series. Keep the code
-small, direct, and useful for demonstrating Grain patterns.
+This is **grain-todo-list**: a small **compact (non-Polylith)** Grain teaching app for the Grain
+Sessions video series. Full agent guidance — stack, layout, the Grain golden path, self-verification
+with `code-agent-tools`, and running/reloading — lives in **`CLAUDE.md`**. Read it first.
 
-## Project Shape
+**The Charter — what every app must be** (see CLAUDE.md): correct & idiomatic · built to the brief
+(acceptance = the contract) · live & reachable at `/` · secure where it matters · polished · verified ·
+honest. The Charter wins over any single step.
 
-- Use the existing compact Clojure layout. Do not introduce Polylith `bases/`,
-  `components/`, `interface.clj`, or service bricks.
-- Keep application composition in `src/cjbarre/grain_todo_list.clj`: Integrant
-  system, routes, lifecycle, and service registration.
-- Keep app-wide shell and reusable UI primitives in
-  `src/cjbarre/grain_todo_list/foundation/ui.clj` and
-  `src/cjbarre/grain_todo_list/foundation/ui/components.clj`.
-- Keep todo domain behavior under
-  `src/cjbarre/grain_todo_list/service/todo_list_service/`: schemas, read models,
-  commands, queries, processors, periodic tasks, and page UI.
-- Use [doc/pattern-compendium.md](doc/pattern-compendium.md) as the detailed
-  architecture reference before adding new patterns.
+**Do NOT introduce Polylith** (`bases/`, `components/`, `interface.clj`, service bricks). Keep the
+compact layout; translate Polylith examples with the table in `CLAUDE.md`.
 
-## Grain And Datastar
-
-- Prefer Grain interfaces already used in the repo over introducing new local
-  wrappers.
-- Define command, event, query, and read-model schemas near the todo service
-  schema definitions.
-- Keep command handlers focused on validation and event emission.
-- Keep query handlers focused on assembling read-model data and returning
-  Datastar Hiccup.
-- UI functions should be pure: receive data and return Hiccup. Do not read the
-  event store, mutate state, run commands, or access Integrant components from
-  page rendering functions.
-- Use Datastar adapter helpers such as `ds/routes`, `ds/action-form`,
-  `ds/on-click-command`, and related DSL helpers instead of building Datastar
-  attributes by hand.
-- Use Grain Code Agent Tools via nrepl to inspect the grain application efficiently.
-- Eval relevant files via nrepl to allow hot reloading code without restarting the app.
-
-## UI And CSS
-
-- Match the existing Tailwind and DaisyUI style.
-- Put app-level reusable Hiccup primitives in the app UI component namespace.
-- Put todo-specific controls, lists, cards, review widgets, and gallery
-  specimens in the todo service UI component namespace.
-- If UI class names change, rebuild CSS with `npm run css:build`.
-
-## Verification
-
-- For behavior changes, run focused Clojure tests with `clojure -T:build test`.
-- For Clojure lint checks, use `clj-kondo --lint src test` when available.
-- For UI or CSS changes, run `npm run css:build`.
-- Do not commit generated or unrelated changes unless the user explicitly asks.
+Quick contract:
+- Build features as **new service directories** (`src/cjbarre/grain_todo_list/service/<name>_service/`,
+  namespace `cjbarre.grain-todo-list.service.<name>-service.*`). Don't rebuild the shipped foundation
+  (`foundation/ui`, `auth-interceptors`, `jwt`, `email`) or the existing `todo-list-service` /
+  `user-service` unless that's the work. Only add a new service dir for a genuinely separate domain.
+- Follow the golden path in order: **event-storm + catalog reconcile → schema → command → read-model →
+  query → view → wire → test**. Service-first; entities are emergent.
+- **`validate` before `invoke-command!`**; prove each slice via `events`/`projection`.
+- **UI is library-first and pure.** Grow the app's component library — app-wide primitives in
+  `foundation/ui/components.clj`, domain widgets in each service's `ui/components.clj` — and compose
+  every screen from it; never hand-roll one-off layout in a page. Use the real `ds-ui` checked DSL
+  (`grain-ui-component` skill). UI fns receive data and return Hiccup — no event-store reads, mutations,
+  commands, or Integrant access. **Building reactive UI beyond a simple form/list (modals/dialogs,
+  contenteditable, live updates, multi-signal coordination)? Read grain's authoritative Datastar UI DSL
+  reference first** — `docs/datastar-ui.md` in the **grain-datastar** dep (it has a *Code Agent
+  Checklist*); locate it dynamically:
+  `find "${GITLIBS:-$HOME/.gitlibs}" -path '*grain-datastar*/docs/datastar-ui.md' | head -1`.
+- **Hybrid auth:** public-first browsing, but any command/query touching per-user/account-scoped data
+  declares a real `:authorized?` (never `(constantly true)` on a mutation/account page).
+- **Definition of done = the gate (all of):** restart system (`(app/stop app)` / `(def app (app/start))`)
+  → `clojure -T:build test` green → `:missing-schemas` empty → auth on account-scoped pages → CSS built
+  → open `/` and verify **each acceptance check** pass/fail as a user → **`design-review`** passes on
+  each screen. Keep exactly one `/`. **Honest:** if any gate item fails and you can't fix it, say which —
+  never report a broken build as success.
+- Reloading: edited ns → `(require 'the.ns :reload)` (that ns only); NEW service → add its requires to
+  `cjbarre.grain-todo-list`, reload the root ns, restart the system; route change → restart the system.
+  **NEVER `:reload-all` or reload `ai.obney.*`/library namespaces** — it redefines protocols and breaks
+  the running app (`No implementation of method … of protocol …`). Tests: `clojure -T:build test`.
+- Queries are **event-driven**: every page query declares `:grain/read-models {<rm> <version>}`; **never
+  use `:datastar/fps`** for normal state (omitting both keys defaults to 30fps polling; `:datastar/fps 0`
+  on a truly static page is the only sanctioned use).
+- Polished empty states (no demo data), structural tenancy, zero schema drift.

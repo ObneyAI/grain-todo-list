@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "nrepl": {
+      "type": "local",
+      "command": ["npx", "nrepl-mcp-server"],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "@playwright/mcp", "--headless", "--isolated", "--no-sandbox"],
+      "enabled": true
+    }
+  },
+  "agent": {
+    "silo-builder": { "mode": "primary" },
+    "silo-planner": { "mode": "primary" },
+    "silo-verifier": {
+      "mode": "primary",
+      "tools": { "write": false, "edit": false, "bash": false, "patch": false }
+    },
+    "silo-inspector": {
+      "mode": "primary",
+      "tools": { "write": false, "edit": false, "bash": false, "patch": false }
+    }
+  }
+}
