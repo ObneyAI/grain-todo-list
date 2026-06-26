@@ -1,0 +1,538 @@
+-- allium: 3
+-- todo-list.allium — the todo domain of the grain-todo-list app.
+--
+-- The owning User is defined and governed by the ACCOUNTS / AUTH domain (accounts.allium); it is
+-- imported here via `use` and referenced as accounts/User. (External there → internal here.)
+use "./accounts.allium" as accounts
+--
+-- Scope: a single user's personal GTD-style workspace. A user captures Tasks, organises
+--   them into Projects, and runs a WeeklyReview that gates completion on every active task
+--   and project having been reviewed. Every Task, Project and WeeklyReview belongs to exactly
+--   one owning User; all actions are scoped to the owner ("within User").
+--
+-- Includes: Task, Project, WeeklyReview, and the owning User (modelled as an actor / external
+--   entity). The Task and Project lifecycles, the WeeklyReview process, all 20 commands as
+--   rules, the at-most-one-active-review invariant, the derived due_at / is_active attributes,
+--   and the six read surfaces (Home, Tasks, Task, Projects, Project, Review).
+--
+-- Excludes (and why):
+--   - User authentication internals (the user-service): auth is foundation. We model only that
+--     every entity has an owner User and that actions are scoped to that owner — not sign-up,
+--     login, sessions or password handling.
+--   - All infrastructure: the Grain event store / CQRS plumbing, Integrant wiring, the
+--     Datastar/SSE UI, the LMDB read-model cache. None is observable domain behaviour.
+--   - The dev gallery surface (/dev/gallery): developer tooling, not the domain.
+--   - Datastar UI feedback signals (e.g. :__toast "Task added."): presentation, not behaviour.
+--
+-- Note: this domain has NO temporal/scheduled rules and NO event-reactive processors. The
+--   running app registers zero periodic-triggers; the only processors are the user-service's
+--   email handling, which is out of scope. Every rule here is an external (user) stimulus.
+--
+-- Abstraction notes:
+--   - UUID *-id fields in the code (user-id, task-id, project-id, review-id) are modelled as
+--     identity + relationships (task.owner, task.project), never as String id fields.
+--   - order is a sortable position (Decimal); the "+1000" next-order scheme is implementation.
+--   - due_within_days is a count of days (Natural); due_at is derived from due_within_set_at +
+--     due_within_days. due_within_set_at is kept because due_at depends on it.
+
+-- The owner of every Task, Project and WeeklyReview is accounts/User — the account defined and
+-- governed by accounts.allium. Authentication, the email/password/session state and the account
+-- lifecycle live there (out of scope here); this domain treats accounts/User purely as the
+-- identity that owns and acts on todo entities.
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum TaskStatus { active | completed | canceled | archived }
+enum ProjectStatus { active | completed | canceled }
+enum ReviewStatus { active | completed }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity Task {
+    owner: accounts/User
+    title: String                       -- non-blank
+    status: TaskStatus
+    order: Decimal                      -- sortable position within the owner's active list
+    project: Project?                   -- optional assignment
+    due_within_days: Integer?           -- optional "due within N days" (a non-negative day count)
+    due_within_set_at: Timestamp?       -- when the due-within was set
+
+    transitions status {
+        active -> completed
+        active -> canceled
+        completed -> archived
+        completed -> active
+        completed -> canceled
+        canceled -> active
+        terminal: archived
+    }
+
+    -- Derived
+    is_active: status = active
+    -- due_at exists only when both the count and the set-time are present; arithmetic with a
+    -- null operand yields null, so this is implicitly optional.
+    due_at: due_within_set_at + due_within_days.days
+    -- "due soon": active and carrying a due date.
+    is_due_soon: is_active and due_at != null
+}
+
+entity Project {
+    owner: accounts/User
+    name: String                        -- non-blank
+    status: ProjectStatus
+
+    -- Relationships
+    tasks: Task with project = this
+
+    -- Projections (task_counts is a query-time aggregation, derived here — not stored)
+    active_tasks: tasks where status = active
+    completed_tasks: tasks where status = completed
+    canceled_tasks: tasks where status = canceled
+
+    transitions status {
+        active -> completed
+        active -> canceled
+        completed -> active
+        canceled -> active
+    }
+
+    -- Derived: a project with no active ("next action") task surfaces in the weekly review.
+    has_next_action: active_tasks.count > 0
+}
+
+-- Abstraction note: the implementation retains only the current/latest review per owner (a
+-- per-user singleton), not a history of completed reviews. WeeklyReviews is modelled here as a
+-- queryable collection; the at-most-one-active-review constraint holds either way, but completed
+-- reviews are not guaranteed to remain queryable in the running system.
+entity WeeklyReview {
+    owner: accounts/User
+    status: ReviewStatus
+    started_at: Timestamp
+    reviewed_projects: Set<Project>
+    reviewed_tasks: Set<Task>
+    completed_at: Timestamp? when status = completed
+
+    transitions status {
+        active -> completed
+        terminal: completed
+    }
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+-- Every rule is a user command. "owns X" in the source (X belongs to the acting user) is
+-- expressed as the requires guard `X.owner = actor`. The actor is the authenticated User.
+
+-- ===== Task capture and editing =====
+
+-- 1. CaptureTask — a task may be captured unassigned or directly into an active project, and
+-- may optionally carry a "due within N days". Modelled as two rules because an optional
+-- entity-reference parameter cannot be navigated to (project.owner) the way a required one can:
+-- CaptureUnassignedTask has no project; CaptureTaskIntoProject takes a required project.
+rule CaptureUnassignedTask {
+    when: CaptureTask(actor, title, due_within_days?)
+
+    ensures:
+        Task.created(
+            owner: actor,
+            title: title,
+            status: active,
+            order: next_order(actor),               -- black box: position in the active list
+            project: null,
+            due_within_days: due_within_days,
+            due_within_set_at: if due_within_days != null: now else: null
+        )
+    @guidance
+        -- next_order returns a sortable position after the owner's current active tasks. The
+        -- concrete scheme (append at the end) is an implementation detail.
+}
+
+rule CaptureTaskIntoProject {
+    when: CaptureTaskIntoProject(actor, title, project, due_within_days?)
+
+    requires: project.owner = actor
+    requires: project.status = active
+
+    ensures:
+        Task.created(
+            owner: actor,
+            title: title,
+            status: active,
+            order: next_order(actor),
+            project: project,
+            due_within_days: due_within_days,
+            due_within_set_at: if due_within_days != null: now else: null
+        )
+}
+
+-- 2. RenameTask
+rule RenameTask {
+    when: RenameTask(actor, task, title)
+    requires: task.owner = actor
+    ensures: task.title = title
+}
+
+-- 3. AssignTaskToProject
+rule AssignTaskToProject {
+    when: AssignTaskToProject(actor, task, project)
+    requires: task.owner = actor
+    requires: project.owner = actor
+    requires: task.status = active
+    requires: project.status = active
+    ensures: task.project = project
+}
+
+-- 4. RemoveTaskFromProject
+rule RemoveTaskFromProject {
+    when: RemoveTaskFromProject(actor, task)
+    requires: task.owner = actor
+    requires: task.project != null
+    ensures: task.project = null
+}
+
+-- 5. SetTaskDueWithin
+rule SetTaskDueWithin {
+    when: SetTaskDueWithin(actor, task, due_within_days)
+    requires: task.owner = actor
+    ensures: task.due_within_days = due_within_days
+    ensures: task.due_within_set_at = now
+}
+
+-- 6. ClearTaskDueWithin
+rule ClearTaskDueWithin {
+    when: ClearTaskDueWithin(actor, task)
+    requires: task.owner = actor
+    ensures: task.due_within_days = null
+    ensures: task.due_within_set_at = null
+}
+
+-- ===== Task lifecycle =====
+
+-- 7. CompleteTask
+rule CompleteTask {
+    when: CompleteTask(actor, task)
+    requires: task.owner = actor
+    requires: task.status = active
+    ensures: task.status = completed
+}
+
+-- 8. ArchiveTask
+rule ArchiveTask {
+    when: ArchiveTask(actor, task)
+    requires: task.owner = actor
+    requires: task.status = completed
+    ensures: task.status = archived
+}
+
+-- 9. CancelTask
+rule CancelTask {
+    when: CancelTask(actor, task)
+    requires: task.owner = actor
+    requires: task.status not in {canceled, archived}
+    ensures: task.status = canceled
+}
+
+-- 10. ReactivateTask
+rule ReactivateTask {
+    when: ReactivateTask(actor, task)
+    requires: task.owner = actor
+    requires: task.status in {completed, canceled}
+    ensures: task.status = active
+}
+
+-- 11. ReorderTask
+rule ReorderTask {
+    when: ReorderTask(actor, task, order)
+    requires: task.owner = actor
+    requires: task.status = active
+    ensures: task.order = order
+}
+
+-- ===== Projects =====
+
+-- 12. CreateProject
+rule CreateProject {
+    when: CreateProject(actor, name)
+    ensures: Project.created(
+        owner: actor,
+        name: name,
+        status: active
+    )
+}
+
+-- 13. RenameProject
+rule RenameProject {
+    when: RenameProject(actor, project, name)
+    requires: project.owner = actor
+    ensures: project.name = name
+}
+
+-- 14. CompleteProject
+rule CompleteProject {
+    when: CompleteProject(actor, project)
+    requires: project.owner = actor
+    requires: project.status = active
+    ensures: project.status = completed
+}
+
+-- 15. CancelProject
+rule CancelProject {
+    when: CancelProject(actor, project)
+    requires: project.owner = actor
+    requires: project.status = active
+    ensures: project.status = canceled
+}
+
+-- 16. ReactivateProject
+rule ReactivateProject {
+    when: ReactivateProject(actor, project)
+    requires: project.owner = actor
+    requires: project.status in {completed, canceled}
+    ensures: project.status = active
+}
+
+-- ===== Weekly review =====
+
+-- 17. StartWeeklyReview — guarded so a user has at most one active review at a time.
+rule StartWeeklyReview {
+    when: StartWeeklyReview(actor)
+    requires: not exists WeeklyReview{owner: actor, status: active}
+    ensures: WeeklyReview.created(
+        owner: actor,
+        status: active,
+        started_at: now,
+        reviewed_projects: {},
+        reviewed_tasks: {}
+    )
+}
+
+-- 18. MarkProjectReviewed
+rule MarkProjectReviewed {
+    when: MarkProjectReviewed(actor, review, project)
+    requires: review.owner = actor
+    requires: review.status = active
+    requires: project.owner = actor
+    requires: project.status = active
+    ensures: review.reviewed_projects.add(project)
+}
+
+-- 19. MarkTaskReviewed
+rule MarkTaskReviewed {
+    when: MarkTaskReviewed(actor, review, task)
+    requires: review.owner = actor
+    requires: review.status = active
+    requires: task.owner = actor
+    requires: task.status = active
+    ensures: review.reviewed_tasks.add(task)
+}
+
+-- 20. CompleteWeeklyReview — gated on every active task and project of the owner being reviewed.
+rule CompleteWeeklyReview {
+    when: CompleteWeeklyReview(actor, review)
+
+    let active_tasks = Tasks where owner = actor and status = active
+    let active_projects = Projects where owner = actor and status = active
+
+    requires: review.owner = actor
+    requires: review.status = active
+    requires: active_tasks.all(t => t in review.reviewed_tasks)
+    requires: active_projects.all(p => p in review.reviewed_projects)
+
+    ensures: review.status = completed
+    ensures: review.completed_at = now
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+-- At most one active WeeklyReview per User. StartWeeklyReview enforces this on creation; the
+-- invariant states the property the whole system maintains.
+invariant AtMostOneActiveReviewPerUser {
+    for u in accounts/Users:
+        (WeeklyReviews where owner = u and status = active).count <= 1
+}
+
+-- due_within_days is a non-negative day count. The field type Integer? cannot encode this; the
+-- implementation enforces it (nat-int?), and this invariant records the constraint at the spec level.
+invariant NonNegativeDueWithinDays {
+    for t in Tasks:
+        t.due_within_days != null implies t.due_within_days >= 0
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+-- The owner acts only within their own scope: every rule guard above ties the target entity's
+-- owner to this actor, and every surface is scoped to the viewer's own entities.
+actor Owner {
+    identified_by: accounts/User
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+-- HomeWorkspace ("/") — the owner's active tasks, due-soon tasks, inactive tasks, active
+-- projects with task counts, and the current weekly review if any.
+surface HomeWorkspace {
+    facing owner: Owner
+
+    let active_tasks = Tasks where owner = owner and status = active
+    let due_soon_tasks = Tasks where owner = owner and is_due_soon
+    let inactive_tasks = Tasks where owner = owner and status in {completed, canceled}
+    let active_projects = Projects where owner = owner and status = active
+    let current_review = WeeklyReviews where owner = owner and status = active
+
+    exposes:
+        active_tasks
+        due_soon_tasks
+        inactive_tasks
+        active_projects
+        for p in active_projects:
+            p.active_tasks.count
+            p.completed_tasks.count
+            p.canceled_tasks.count
+        current_review
+
+    related:
+        TasksScreen
+        ProjectsScreen
+        WeeklyReviewScreen
+}
+
+-- TasksScreen ("/tasks") — active tasks plus active projects (to assign to).
+surface TasksScreen {
+    facing owner: Owner
+
+    let active_tasks = Tasks where owner = owner and status = active
+    let active_projects = Projects where owner = owner and status = active
+
+    exposes:
+        active_tasks
+        active_projects
+
+    provides:
+        CaptureTask(owner, title, due_within_days)
+        for project in active_projects:
+            CaptureTaskIntoProject(owner, title, project, due_within_days)
+        for task in active_tasks:
+            CompleteTask(owner, task)
+            CancelTask(owner, task)
+            ReorderTask(owner, task, order)
+}
+
+-- TaskScreen ("/task") — a specific owned Task, plus active projects to assign it to.
+surface TaskScreen {
+    facing owner: Owner
+
+    context task: Task where owner = owner
+
+    let active_projects = Projects where owner = owner and status = active
+
+    exposes:
+        task.title
+        task.status
+        task.project
+        task.due_within_days
+        task.due_at
+        active_projects
+
+    provides:
+        RenameTask(owner, task, title)
+        AssignTaskToProject(owner, task, project)
+            when task.status = active
+        RemoveTaskFromProject(owner, task)
+            when task.project != null
+        SetTaskDueWithin(owner, task, due_within_days)
+        ClearTaskDueWithin(owner, task)
+        CompleteTask(owner, task)
+            when task.status = active
+        ArchiveTask(owner, task)
+            when task.status = completed
+        CancelTask(owner, task)
+            when task.status not in {canceled, archived}
+        ReactivateTask(owner, task)
+            when task.status in {completed, canceled}
+}
+
+-- ProjectsScreen ("/projects") — all of the owner's projects with task counts.
+surface ProjectsScreen {
+    facing owner: Owner
+
+    let projects = Projects where owner = owner
+
+    exposes:
+        projects
+        for p in projects:
+            p.active_tasks.count
+            p.completed_tasks.count
+            p.canceled_tasks.count
+
+    provides:
+        CreateProject(owner, name)
+        for project in projects:
+            RenameProject(owner, project, name)
+            CompleteProject(owner, project)
+                when project.status = active
+            CancelProject(owner, project)
+                when project.status = active
+            ReactivateProject(owner, project)
+                when project.status in {completed, canceled}
+}
+
+-- ProjectScreen ("/project") — a specific owned Project and its active tasks.
+surface ProjectScreen {
+    facing owner: Owner
+
+    context project: Project where owner = owner
+
+    exposes:
+        project.name
+        project.status
+        project.active_tasks
+        project.active_tasks.count
+        project.completed_tasks.count
+        project.canceled_tasks.count
+
+    provides:
+        RenameProject(owner, project, name)
+        CompleteProject(owner, project)
+            when project.status = active
+        CancelProject(owner, project)
+            when project.status = active
+        ReactivateProject(owner, project)
+            when project.status in {completed, canceled}
+}
+
+-- WeeklyReviewScreen ("/review") — workspace data, review progress, and projects with no
+-- active ("next action") task.
+surface WeeklyReviewScreen {
+    facing owner: Owner
+
+    let active_tasks = Tasks where owner = owner and status = active
+    let active_projects = Projects where owner = owner and status = active
+    let current_review = WeeklyReviews where owner = owner and status = active
+    let projects_without_next_action = Projects where owner = owner and status = active and not has_next_action
+
+    exposes:
+        active_tasks
+        active_projects
+        current_review
+        projects_without_next_action
+
+    provides:
+        StartWeeklyReview(owner)
+        for review in current_review:
+            for task in active_tasks:
+                MarkTaskReviewed(owner, review, task)
+            for project in active_projects:
+                MarkProjectReviewed(owner, review, project)
+            CompleteWeeklyReview(owner, review)
+}

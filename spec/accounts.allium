@@ -1,0 +1,390 @@
+-- allium: 3
+-- accounts.allium — the ACCOUNTS / AUTH domain of grain-todo-list (the user-service).
+--
+-- Scope: this is the identity foundation that todo-list.allium builds on. The User defined
+--   here is THE SAME User that todo-list.allium's Task/Project/WeeklyReview own and whose
+--   Owner actor is identified by. todo-list.allium imports this User via `use`.
+--
+-- Includes: the User account; sign-up; email verification; login / logout; changing the
+--   password while signed in; the forgot/reset-password flow; the two reactive emails
+--   (verification, reset); the five public auth surfaces (sign-up, sign-in, forgot-password,
+--   verify-email, reset-password).
+--
+-- Excludes (and why):
+--   - Cryptographic / token mechanism: JWT session tokens, the verification- and reset-token
+--     STRINGS, and password HASHING are all IMPLEMENTATION of identity. We model the DOMAIN
+--     STATE they stand for — an email verification is pending; a password reset is pending —
+--     never the token or hash itself. Password matching and "proof valid for this user" are
+--     modelled as black-box predicates.
+--   - Sessions are STATELESS: auth is a client-held JWT, with NO server-side session store.
+--     Login therefore changes no persistent server state (the logged-in event has no read-model
+--     handler); its real effect is issuing the JWT, which is mechanism and out of scope. Logout
+--     bumps a per-user session_generation counter (the token_version); incrementing it
+--     invalidates all of the user's previously-issued JWTs. We model that counter — the only
+--     real state change for logout — not the token itself.
+--   - HTTP cookie interceptors, the event-store / CQRS plumbing, and UI feedback signals: none
+--     is observable domain behaviour.
+--
+-- Abstraction notes:
+--   - email_address is stored normalized (trimmed + lowercased) in the implementation, so email
+--     is effectively case-insensitive. The unique-email invariant and the SignUp guard operate
+--     on that normalized form.
+--   - The pending verification / reset tokens are modelled as the boolean domain states
+--     email_verification_pending / password_reset_pending. The token strings are mechanism and
+--     are omitted.
+--   - A login establishes only an ephemeral, client-held (stateless) session and records nothing
+--     server-side; a logout increments session_generation, which invalidates the user's
+--     previously-issued sessions. session_generation is the only logout state change we model.
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- The two transactional emails this domain sends. (Named so EmailKind is data on the Email
+-- output entity, not an inline status with a lifecycle.)
+enum EmailKind { email_verification | password_reset }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+-- Email — the output entity for the two transactional emails. The reactive rules create one so
+-- the verification / reset notifications have a domain artifact; delivery is out of scope. The
+-- link contents (verification / reset tokens) are mechanism and omitted.
+entity Email {
+    to: String                      -- the recipient address
+    kind: EmailKind                 -- which transactional email this is
+}
+
+-- User — the account. THIS IS THE SAME User that todo-list.allium's Task, Project and
+-- WeeklyReview own and whose Owner actor is identified by. (External there, internal here.)
+entity User {
+    email_address: String           -- unique across accounts; stored normalized (case-insensitive)
+    password: String                -- the set credential (stored hashed; the hash is not modelled)
+    active: Boolean                 -- starts true; see open question RE: latent inactive guard
+    email_verified: Boolean         -- starts false; becomes true via VerifyEmail
+    email_verification_pending: Boolean   -- true from SignUp until VerifyEmail
+    password_reset_pending: Boolean       -- true from RequestPasswordReset until ResetPassword
+
+    -- incremented on logout to invalidate the user's previously-issued (stateless) sessions; the
+    -- JWT/token mechanism is out of scope.
+    session_generation: Integer           -- starts 0
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- The minimum password length component of the complexity policy. The full policy (this
+    -- length plus upper + lower + digit) is captured by the meets_complexity predicate, which is
+    -- guarded at every credential-setting rule and asserted by PasswordComplexity.
+    min_password_length: Integer = 8
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+-- Commands map to rules; emitted events map to ensures; :authorized? maps to actor scoping;
+-- the two event processors map to the reactive email rules.
+
+-- ===== Sign-up =====
+
+-- 1. SignUp — anyone may sign up. The email must be free (compared on its normalized form) and
+-- the two password entries must match. The new account starts active, unverified, with an email
+-- verification pending. [Public]
+rule SignUp {
+    when: SignUp(email_address, password, confirm_password)
+
+    requires: not exists User{email_address: email_address}
+    requires: password = confirm_password
+    requires: meets_complexity(password)
+
+    ensures: User.created(
+        email_address: email_address,
+        password: password,
+        active: true,
+        email_verified: false,
+        email_verification_pending: true,
+        password_reset_pending: false,
+        session_generation: 0
+    )
+    @guidance
+        -- email_address is normalized (trimmed + lowercased) before the uniqueness check, so
+        -- sign-up is case-insensitive in the email. meets_complexity guards the full password
+        -- policy (length + character classes). The stored credential is hashed; the hash is not
+        -- modelled. The verification-pending state collapses an underlying step that issues a
+        -- verification token: the boolean stands in for that token's presence.
+}
+
+-- 2. (REACTIVE) SendEmailVerification — when an account's email verification becomes pending
+-- (on sign-up), send the user a verification email.
+rule SendEmailVerification {
+    when: user: User.email_verification_pending becomes true
+
+    ensures: Email.created(
+        to: user.email_address,
+        kind: email_verification
+    )
+    @guidance
+        -- The email carries a link with a verification token that expires; the token and its
+        -- expiry are mechanism and out of scope. The reactive trigger is the pending state
+        -- becoming true (set on sign-up).
+}
+
+-- ===== Login / logout =====
+
+-- 3. Login — anyone may attempt login. Succeeds only when an account exists for the (normalized)
+-- email, the password is correct, and the account is active. This is a pure authorization guard:
+-- it changes NO persistent server state. [Public]
+rule Login {
+    when: Login(email_address, password)
+
+    let user = User{email_address: email_address}
+
+    requires: exists user
+    requires: password_matches(password, user.password)   -- black box: credential check
+    requires: user.active
+
+    @guidance
+        -- Login establishes only an ephemeral, client-held (stateless) session — there is no
+        -- server-side session record, so this rule has no ensures. The logged-in event has no
+        -- read-model handler; the real effect is issuing a JWT, which is mechanism and out of
+        -- scope.
+        -- PRIVACY: a missing account and a wrong password must yield the SAME "invalid
+        -- credentials" outcome — never reveal which of the two failed. An inactive account is
+        -- rejected separately (see the open question on the latent inactive guard).
+}
+
+-- 4. LogOut — requires an authenticated actor. Increments the user's session_generation, which
+-- invalidates the user's previously-issued (stateless) sessions. [Account]
+rule LogOut {
+    when: LogOut(user)
+
+    ensures: user.session_generation = user.session_generation + 1
+    @guidance
+        -- Logout invalidates the user's existing sessions — the domain effect the
+        -- session_generation counter (the token_version) stands for. Bumping it makes every JWT
+        -- issued under the prior generation invalid; the JWT/token mechanism is out of scope.
+}
+
+-- 5. SetPassword — change the password while signed in. Requires an authenticated actor.
+-- [Account]
+rule SetPassword {
+    when: SetPassword(user, password)
+
+    requires: meets_complexity(password)
+
+    ensures: user.password = password
+    @guidance
+        -- meets_complexity guards the full password policy (length + character classes); the
+        -- stored credential is hashed.
+}
+
+-- ===== Email verification =====
+
+-- 6. VerifyEmail — anyone with a valid proof-bearing link may verify. The account must still
+-- have a verification pending (not already verified) and the proof must be valid for that user.
+-- [Public]
+rule VerifyEmail {
+    when: VerifyEmail(user, verification_proof)
+
+    requires: user.email_verification_pending
+    requires: verification_proof_valid(verification_proof, user)   -- black box: proof check
+
+    ensures: user.email_verified = true
+    ensures: user.email_verification_pending = false
+    @guidance
+        -- The proof is the verification token carried by the email link (mechanism, out of
+        -- scope); verification_proof_valid abstracts "this proof belongs to this pending user".
+}
+
+-- ===== Forgot / reset password =====
+
+-- 7. RequestPasswordReset — anyone may request a reset for an email. If an account exists, a
+-- reset becomes pending (and a reset email is sent). If not, nothing happens. [Public]
+rule RequestPasswordReset {
+    when: RequestPasswordReset(email_address)
+
+    let user = User{email_address: email_address}
+
+    ensures:
+        if exists user:
+            user.password_reset_pending = true
+            PasswordResetRequested(user: user)
+    @guidance
+        -- ANTI-ENUMERATION: the system responds IDENTICALLY whether or not an account exists
+        -- (the same confirmation). No state changes and no email when the account does not
+        -- exist, so existence is never leaked. The reset link / token and its expiry are
+        -- mechanism and out of scope.
+        -- Each request emits PasswordResetRequested, so a repeated request sends a fresh email
+        -- and re-issues the reset proof even when a reset is already pending.
+}
+
+-- 8. (REACTIVE) SendPasswordResetEmail — send a reset email for each reset request. Keyed on the
+-- PasswordResetRequested event (not the pending-state edge) so a repeated request re-sends, even
+-- when a reset is already pending.
+rule SendPasswordResetEmail {
+    when: PasswordResetRequested(user)
+
+    ensures: Email.created(
+        to: user.email_address,
+        kind: password_reset
+    )
+    @guidance
+        -- PasswordResetRequested is an INTERNAL event emitted by RequestPasswordReset's ensures
+        -- (not a surface-provided trigger), so analyse flagging it as an unreachable trigger is
+        -- an analyser limitation for rule-emitted triggers, not a real gap.
+}
+
+-- 9. ResetPassword — anyone with a valid proof-bearing link may set a new password. The account
+-- must have a reset pending and the proof must be valid (and not already used — the pending
+-- flag clearing is what marks it used). [Public]
+rule ResetPassword {
+    when: ResetPassword(user, reset_proof, password)
+
+    requires: user.password_reset_pending
+    requires: reset_proof_valid(reset_proof, user)        -- black box: proof check
+    requires: meets_complexity(password)
+
+    ensures: user.password = password
+    ensures: user.password_reset_pending = false
+    @guidance
+        -- Clearing password_reset_pending marks the proof used, so a second use of the same link
+        -- fails the password_reset_pending guard ("already used"). The proof / token is mechanism
+        -- and out of scope; meets_complexity guards the full password policy; the stored
+        -- credential is hashed.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+-- Email is unique across accounts. SignUp enforces this on creation (on the normalized form);
+-- the invariant states the property the whole system maintains.
+invariant UniqueEmailPerAccount {
+    for a in Users:
+        for b in Users:
+            a.email_address = b.email_address implies a = b
+}
+
+-- Password complexity. The String type cannot encode "at least min_password_length chars with
+-- upper + lower + digit". meets_complexity is a black-box predicate over the credential capturing
+-- length (>= config.min_password_length) plus the character-class requirements. SignUp,
+-- SetPassword and ResetPassword each guard meets_complexity, so this invariant is maintained at
+-- every point the credential is set.
+invariant PasswordComplexity {
+    for u in Users:
+        meets_complexity(u.password)
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+-- Visitor — the public, unauthenticated party. Any User (or would-be User) may use the public
+-- auth pages: sign up, log in, verify email, request a reset, reset a password. Modelled as the
+-- User entity directly because no session is required to reach these surfaces.
+actor Visitor {
+    identified_by: User
+}
+
+-- Account — the authenticated user acting on their own account. Authenticated actions: log out,
+-- change password. (todo-list.allium defines a separate Owner role for the todo domain; both are
+-- identified_by the same User, which already conveys the shared identity.)
+actor Account {
+    identified_by: User
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+-- The five public auth pages. All are unauthenticated (facing Visitor) and statically rendered
+-- (the live queries set fps 0). LogOut and SetPassword have NO dedicated page in the codebase —
+-- they are invoked from the app chrome / account area — so no surface is invented for them.
+
+-- SignUpPage ("/auth/sign-up") — create an account.
+surface SignUpPage {
+    facing visitor: Visitor
+
+    provides:
+        SignUp(email_address, password, confirm_password)
+
+    @guarantee NoSessionRequired
+        -- Reachable without an existing session.
+}
+
+-- SignInPage ("/auth/sign-in") — log in.
+surface SignInPage {
+    facing visitor: Visitor
+
+    provides:
+        Login(email_address, password)
+
+    @guarantee NoSessionRequired
+        -- Reachable without an existing session.
+
+    @guidance
+        -- Invalid email and wrong password must surface the same "Invalid credentials." message
+        -- (no account enumeration); see the Login rule guidance.
+}
+
+-- ForgotPasswordPage ("/auth/forgot-password") — request a reset link.
+surface ForgotPasswordPage {
+    facing visitor: Visitor
+
+    provides:
+        RequestPasswordReset(email_address)
+
+    @guarantee NoSessionRequired
+        -- Reachable without an existing session.
+
+    @guidance
+        -- The confirmation shown is identical whether or not the email matches an account.
+}
+
+-- VerifyEmailPage ("/auth/verify-email") — carries a verification proof from the email link.
+surface VerifyEmailPage {
+    facing visitor: Visitor
+
+    context user: User where email_verification_pending
+
+    provides:
+        VerifyEmail(user, verification_proof)
+            when user.email_verification_pending
+
+    @guarantee NoSessionRequired
+        -- Reachable without an existing session; the page carries the verification proof.
+}
+
+-- ResetPasswordPage ("/auth/reset-password") — carries a reset proof from the email link.
+surface ResetPasswordPage {
+    facing visitor: Visitor
+
+    context user: User where password_reset_pending
+
+    provides:
+        ResetPassword(user, reset_proof, password)
+            when user.password_reset_pending
+
+    @guarantee NoSessionRequired
+        -- Reachable without an existing session; the page carries the reset proof.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- The `active` field and the Login `requires: user.active` guard form a LATENT inactive-account
+-- check: login rejects an inactive account, but NO command in the codebase ever sets
+-- active = false (there is no deactivate / suspend rule). The transition true -> false is
+-- therefore unreachable from this spec, and the guard can never fail in practice.
+-- Should there be a Deactivate / Suspend rule (and a matching admin/account surface), or should
+-- the latent `active` field and its login guard be dropped?
+open question "Inactive account: login rejects active = false, but no command ever sets it. Add a Deactivate/Suspend rule, or drop the latent `active` field and its login guard?"
+
+-- The LogOut and SetPassword commands exist as rules but nothing in the codebase dispatches them:
+-- no UI surface provides them, and the only logout reference is the cookie-clearing auth
+-- interceptor (mechanism, not a domain surface). Their triggers are therefore unreachable from
+-- this spec.
+open question "The logout and set-password commands exist but no surface/UI in the codebase dispatches them (logout is only handled by the cookie interceptor). Are these intentionally unwired (WIP), or should an authenticated account surface provide them?"
